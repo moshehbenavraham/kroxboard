@@ -7,6 +7,8 @@ interface Platform {
   name: string;
   accountId?: string;
   appId?: string;
+  botOpenId?: string;
+  botUserId?: string;
 }
 
 interface Agent {
@@ -23,16 +25,27 @@ interface ConfigData {
   gateway?: { port: number; token?: string };
 }
 
-// 平台标签颜色（可点击跳转到 session）
+// 平台标签颜色（可点击跳转到对应平台的 session chat 页面）
 function PlatformBadge({ platform, agentId, gatewayPort, gatewayToken }: { platform: Platform; agentId: string; gatewayPort: number; gatewayToken?: string }) {
   const isFeishu = platform.name === "feishu";
-  let sessionUrl = `http://localhost:${gatewayPort}/sessions?agent=${agentId}`;
+
+  let sessionKey: string;
+  if (isFeishu && platform.botOpenId) {
+    sessionKey = `agent:${agentId}:feishu:direct:${platform.botOpenId}`;
+  } else if (!isFeishu && platform.botUserId) {
+    sessionKey = `agent:${agentId}:discord:direct:${platform.botUserId}`;
+  } else {
+    sessionKey = `agent:${agentId}:main`;
+  }
+  let sessionUrl = `http://localhost:${gatewayPort}/chat?session=${encodeURIComponent(sessionKey)}`;
   if (gatewayToken) sessionUrl += `&token=${encodeURIComponent(gatewayToken)}`;
+
   return (
     <a
       href={sessionUrl}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-80 transition ${
         isFeishu
           ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
@@ -71,10 +84,19 @@ function ModelBadge({ model }: { model: string }) {
   );
 }
 
-// Agent 卡片
+// Agent 卡片（点击跳转到 agent 的 main session chat 页面）
 function AgentCard({ agent, gatewayPort, gatewayToken }: { agent: Agent; gatewayPort: number; gatewayToken?: string }) {
+  const sessionKey = `agent:${agent.id}:main`;
+  let sessionUrl = `http://localhost:${gatewayPort}/chat?session=${encodeURIComponent(sessionKey)}`;
+  if (gatewayToken) sessionUrl += `&token=${encodeURIComponent(gatewayToken)}`;
+
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5 hover:border-[var(--accent)] transition-colors">
+    <a
+      href={sessionUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block rounded-xl border border-[var(--border)] bg-[var(--card)] p-5 hover:border-[var(--accent)] transition-colors cursor-pointer"
+    >
       <div className="flex items-center gap-3 mb-3">
         <span className="text-3xl">{agent.emoji}</span>
         <div>
@@ -109,7 +131,7 @@ function AgentCard({ agent, gatewayPort, gatewayToken }: { agent: Agent; gateway
           </div>
         )}
       </div>
-    </div>
+    </a>
   );
 }
 

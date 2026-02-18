@@ -7,6 +7,31 @@ const OPENCLAW_HOME = process.env.OPENCLAW_HOME || path.join(process.env.HOME ||
 const CONFIG_PATH = path.join(OPENCLAW_HOME, "openclaw.json");
 const OPENCLAW_DIR = OPENCLAW_HOME;
 
+// 从配置的 allowFrom 读取用户 id，用于构建 session key
+
+// 从 OpenClaw sessions 文件获取每个 agent 最近活跃的飞书 DM session 的用户 open_id
+function getFeishuUserOpenIds(agentIds: string[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const agentId of agentIds) {
+    try {
+      const sessionsPath = path.join(OPENCLAW_DIR, `agents/${agentId}/sessions/sessions.json`);
+      const raw = fs.readFileSync(sessionsPath, "utf-8");
+      const sessions = JSON.parse(raw);
+      let best: { openId: string; updatedAt: number } | null = null;
+      for (const [key, val] of Object.entries(sessions)) {
+        const m = key.match(/^agent:[^:]+:feishu:direct:(ou_[a-f0-9]+)$/);
+        if (m) {
+          const updatedAt = (val as any).updatedAt || 0;
+          if (!best || updatedAt > best.updatedAt) {
+            best = { openId: m[1], updatedAt };
+          }
+        }
+      }
+      if (best) map[agentId] = best.openId;
+    } catch {}
+  }
+  return map;
+}
 // 从 IDENTITY.md 读取机器人名字
 function readIdentityName(agentId: string, agentDir?: string, workspace?: string): string | null {
   const candidates = [
@@ -50,8 +75,13 @@ export async function GET() {
     const channels = config.channels || {};
     const feishuAccounts = channels.feishu?.accounts || {};
 
+    // 从 OpenClaw sessions 文件获取每个 agent 飞书 DM 的用户 open_id
+    const agentIds = agentList.map((a: any) => a.id);
+    const feishuUserOpenIds = getFeishuUserOpenIds(agentIds);
+    const discordDmAllowFrom = channels.discord?.dm?.allowFrom || [];
+
     // 构建 agent 详情
-    const agents = agentList.map((agent: any) => {
+    const agents = await Promise.all(agentList.map(async (agent: any) => {
       const id = agent.id;
       const identityName = readIdentityName(id, agent.agentDir, agent.workspace);
       const name = identityName || agent.name || id;
@@ -59,7 +89,7 @@ export async function GET() {
       const model = agent.model || defaultModel;
 
       // 查找绑定的平台
-      const platforms: { name: string; accountId?: string; appId?: string }[] = [];
+      const platforms: { name: string; accountId?: string; appId?: string; botOpenId?: string; botUserId?: string }[] = [];
 
       // 检查飞书绑定
       const feishuBinding = bindings.find(
@@ -67,23 +97,28 @@ export async function GET() {
       );
       if (feishuBinding) {
         const accountId = feishuBinding.match?.accountId || id;
-        const appId = feishuAccounts[accountId]?.appId;
-        platforms.push({ name: "feishu", accountId, appId });
+        const acc = feishuAccounts[accountId];
+        const appId = acc?.appId;
+        const userOpenId = feishuUserOpenIds[id] || null;
+        platforms.push({ name: "feishu", accountId, appId, ...(userOpenId && { botOpenId: userOpenId }) });
       }
 
       // main agent 特殊处理：默认绑定所有未显式绑定的 channel
       if (id === "main") {
         if (!feishuBinding && channels.feishu?.enabled) {
-          const appId = feishuAccounts["main"]?.appId || channels.feishu?.appId;
-          platforms.push({ name: "feishu", accountId: "main", appId });
+          const acc = feishuAccounts["main"];
+          const appId = acc?.appId || channels.feishu?.appId;
+          const userOpenId = feishuUserOpenIds["main"] || null;
+          platforms.push({ name: "feishu", accountId: "main", appId, ...(userOpenId && { botOpenId: userOpenId }) });
         }
         if (channels.discord?.enabled) {
-          platforms.push({ name: "discord" });
+          const botUserId = discordDmAllowFrom[0] || null;
+          platforms.push({ name: "discord", ...(botUserId && { botUserId }) });
         }
       }
 
       return { id, name, emoji, model, platforms };
-    });
+    }));
 
     // 提取模型 providers
     const providers = Object.entries(config.models?.providers || {}).map(
