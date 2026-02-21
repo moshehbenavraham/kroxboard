@@ -61,6 +61,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "home.discordChannel": "Discord 频道",
     "home.bots": "个机器人",
     "home.noResponseData": "暂无响应时间数据",
+    "home.testPlatforms": "🧪 测试平台连通",
+    "home.testingPlatforms": "⏳ 测试平台中...",
 
     // agent card
     "agent.model": "模型",
@@ -221,6 +223,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "home.discordChannel": "Discord Channel",
     "home.bots": "bots",
     "home.noResponseData": "No response time data",
+    "home.testPlatforms": "🧪 Test Platforms",
+    "home.testingPlatforms": "⏳ Testing Platforms...",
 
     // agent card
     "agent.model": "Model",

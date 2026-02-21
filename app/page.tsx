@@ -159,8 +159,16 @@ function ResponseTrendChart({ data, height = 180, t }: { data: DayStat[]; height
   );
 }
 
+// 平台测试结果类型
+interface PlatformTestResult {
+  ok: boolean;
+  reply?: string;
+  error?: string;
+  elapsed: number;
+}
+
 // 平台标签颜色
-function PlatformBadge({ platform, agentId, gatewayPort, gatewayToken, t }: { platform: Platform; agentId: string; gatewayPort: number; gatewayToken?: string; t: TFunc }) {
+function PlatformBadge({ platform, agentId, gatewayPort, gatewayToken, t, testResult }: { platform: Platform; agentId: string; gatewayPort: number; gatewayToken?: string; t: TFunc; testResult?: PlatformTestResult | null }) {
   const isFeishu = platform.name === "feishu";
 
   let sessionKey: string;
@@ -175,24 +183,35 @@ function PlatformBadge({ platform, agentId, gatewayPort, gatewayToken, t }: { pl
   if (gatewayToken) sessionUrl += `&token=${encodeURIComponent(gatewayToken)}`;
 
   return (
-    <a
-      href={sessionUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={(e) => e.stopPropagation()}
-      title={t("agent.openChat")}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all hover:scale-105 hover:shadow-md ${
-        isFeishu
-          ? "bg-blue-500/20 text-blue-300 border border-blue-500/30 hover:bg-blue-500/40 hover:border-blue-400"
-          : "bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/40 hover:border-purple-400"
-      }`}
-    >
-      {isFeishu ? t("platform.feishu") : t("platform.discord")}
-      {platform.accountId && (
-        <span className="opacity-60">({platform.accountId})</span>
+    <div className="flex items-center gap-1.5">
+      <a
+        href={sessionUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        title={t("agent.openChat")}
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all hover:scale-105 hover:shadow-md ${
+          isFeishu
+            ? "bg-blue-500/20 text-blue-300 border border-blue-500/30 hover:bg-blue-500/40 hover:border-blue-400"
+            : "bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/40 hover:border-purple-400"
+        }`}
+      >
+        {isFeishu ? t("platform.feishu") : t("platform.discord")}
+        {platform.accountId && (
+          <span className="opacity-60">({platform.accountId})</span>
+        )}
+        <span className="opacity-50 text-[10px]">↗</span>
+      </a>
+      {testResult === undefined ? (
+        <span className="text-xs text-[var(--text-muted)]">--</span>
+      ) : testResult === null ? (
+        <span className="text-xs text-[var(--text-muted)] animate-pulse">⏳</span>
+      ) : testResult.ok ? (
+        <span className="text-green-400 text-sm cursor-help" title={`${testResult.elapsed}ms${testResult.reply ? ' · ' + testResult.reply : ''}`}>✅</span>
+      ) : (
+        <span className="text-red-400 text-sm cursor-help" title={testResult.error || ''}>❌</span>
       )}
-      <span className="opacity-50 text-[10px]">↗</span>
-    </a>
+    </div>
   );
 }
 
@@ -221,7 +240,7 @@ function ModelBadge({ model }: { model: string }) {
 }
 
 // Agent 卡片
-function AgentCard({ agent, gatewayPort, gatewayToken, t, testResult }: { agent: Agent; gatewayPort: number; gatewayToken?: string; t: TFunc; testResult?: { ok: boolean; text?: string; error?: string; elapsed: number } | null }) {
+function AgentCard({ agent, gatewayPort, gatewayToken, t, testResult, platformTestResults }: { agent: Agent; gatewayPort: number; gatewayToken?: string; t: TFunc; testResult?: { ok: boolean; text?: string; error?: string; elapsed: number } | null; platformTestResults?: Record<string, PlatformTestResult | null> }) {
   const sessionKey = `agent:${agent.id}:main`;
   let sessionUrl = `http://localhost:${gatewayPort}/chat?session=${encodeURIComponent(sessionKey)}`;
   if (gatewayToken) sessionUrl += `&token=${encodeURIComponent(gatewayToken)}`;
@@ -272,9 +291,13 @@ function AgentCard({ agent, gatewayPort, gatewayToken, t, testResult }: { agent:
         <div>
           <span className="text-xs text-[var(--text-muted)] block mb-1">{t("agent.platform")}</span>
           <div className="flex flex-col gap-1">
-            {agent.platforms.map((p, i) => (
-              <PlatformBadge key={i} platform={p} agentId={agent.id} gatewayPort={gatewayPort} gatewayToken={gatewayToken} t={t} />
-            ))}
+            {agent.platforms.map((p, i) => {
+              const pKey = `${agent.id}:${p.name}`;
+              const pResult = platformTestResults ? platformTestResults[pKey] : undefined;
+              return (
+                <PlatformBadge key={i} platform={p} agentId={agent.id} gatewayPort={gatewayPort} gatewayToken={gatewayToken} t={t} testResult={pResult} />
+              );
+            })}
           </div>
         </div>
 
@@ -339,6 +362,8 @@ export default function Home() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { ok: boolean; text?: string; error?: string; elapsed: number }> | null>(null);
   const [testing, setTesting] = useState(false);
+  const [platformTestResults, setPlatformTestResults] = useState<Record<string, PlatformTestResult | null> | null>(null);
+  const [testingPlatforms, setTestingPlatforms] = useState(false);
 
   const RANGE_LABELS: Record<TimeRange, string> = { daily: t("range.daily"), weekly: t("range.weekly"), monthly: t("range.monthly") };
 
@@ -387,6 +412,31 @@ export default function Home() {
       })
       .catch(() => {})
       .finally(() => setTesting(false));
+  }, [data]);
+
+  const testAllPlatforms = useCallback(() => {
+    setTestingPlatforms(true);
+    // Set all agent:platform combos to null (⏳)
+    const pending: Record<string, any> = {};
+    if (data) {
+      for (const a of data.agents) {
+        for (const p of a.platforms) {
+          pending[`${a.id}:${p.name}`] = null;
+        }
+      }
+    }
+    setPlatformTestResults(pending);
+    fetch("/api/test-platforms", { method: "POST" })
+      .then((r) => r.json())
+      .then((resp) => {
+        if (resp.results) {
+          const map: Record<string, PlatformTestResult> = {};
+          for (const r of resp.results) map[`${r.agentId}:${r.platform}`] = r;
+          setPlatformTestResults(map);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setTestingPlatforms(false));
   }, [data]);
 
   // 定时刷新
@@ -462,13 +512,20 @@ export default function Home() {
           >
             {testing ? t("home.testingAll") : t("home.testAll")}
           </button>
+          <button
+            onClick={testAllPlatforms}
+            disabled={testingPlatforms}
+            className="px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-[var(--text)] text-sm font-medium hover:border-[var(--accent)] transition disabled:opacity-50 cursor-pointer"
+          >
+            {testingPlatforms ? t("home.testingPlatforms") : t("home.testPlatforms")}
+          </button>
         </div>
       </div>
 
       {/* 卡片墙 */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {data.agents.map((agent) => (
-          <AgentCard key={agent.id} agent={agent} gatewayPort={data.gateway?.port || 18789} gatewayToken={data.gateway?.token} t={t} testResult={testResults?.[agent.id]} />
+          <AgentCard key={agent.id} agent={agent} gatewayPort={data.gateway?.port || 18789} gatewayToken={data.gateway?.token} t={t} testResult={testResults?.[agent.id]} platformTestResults={platformTestResults || undefined} />
         ))}
       </div>
 
