@@ -241,12 +241,13 @@ async function testDiscord(
   }
 }
 
-// Agent session test: use openclaw CLI to send a health check and verify agent responds
-function testAgentSession(agentId: string): AgentTestResult {
+// Agent session test: use openclaw CLI to send a health check via feishu DM session
+function testAgentSession(agentId: string, sessionKey?: string): AgentTestResult {
   const startTime = Date.now();
   try {
+    const sessionArg = sessionKey ? `--session-id "${sessionKey}"` : "";
     const result = execSync(
-      `openclaw agent --agent ${agentId} --message "Health check: reply with OK" --json --timeout 30`,
+      `openclaw agent --agent ${agentId} ${sessionArg} --message "Health check: reply with OK" --json --timeout 30`,
       { timeout: 40000, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
     );
 
@@ -346,10 +347,13 @@ export async function POST() {
 
     const platformResults = await Promise.all(platformTests);
 
-    // Phase 2: Agent session tests (sequential to avoid overloading gateway)
+    // Phase 2: Agent session tests via feishu DM session (sequential)
     const agentResults: PlatformTestResult[] = [];
     for (const id of agentIds) {
-      const r = testAgentSession(id);
+      // Build feishu DM session key for this agent
+      const dmUser = getFeishuDmUser(id);
+      const sessionKey = dmUser ? `agent:${id}:feishu:direct:${dmUser}` : undefined;
+      const r = testAgentSession(id, sessionKey);
       agentResults.push({
         agentId: r.agentId,
         platform: "agent",
