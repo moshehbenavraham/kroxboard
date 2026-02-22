@@ -266,13 +266,16 @@ function AgentCard({ agent, gatewayPort, gatewayToken, t, testResult, platformTe
         <span className="text-3xl">{agent.emoji}</span>
         <div>
           <h3 className="text-lg font-semibold text-[var(--text)]">{agent.name}</h3>
-          {agent.name !== agent.id && (
-            <span className="text-xs text-[var(--text-muted)]">agentId: {agent.id}</span>
-          )}
         </div>
       </div>
 
       <div className="space-y-2">
+        {agent.name !== agent.id && (
+          <div>
+            <span className="text-xs text-[var(--text-muted)] block mb-1">Agent ID</span>
+            <span className="text-sm text-[var(--text)]">{agent.id}</span>
+          </div>
+        )}
         <div>
           <span className="text-xs text-[var(--text-muted)] block mb-1">{t("agent.model")}</span>
           <div className="flex items-center gap-2">
