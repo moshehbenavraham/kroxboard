@@ -104,6 +104,7 @@ export default function ModelsPage() {
     }
   };
 
+  // 首次加载 - 从 localStorage 恢复测试状态
   useEffect(() => {
     Promise.all([
       fetch("/api/config").then((r) => r.json()),
@@ -121,7 +122,24 @@ export default function ModelsPage() {
         }
       })
       .catch((e) => setError(e.message));
+
+    // 从 localStorage 恢复测试结果
+    const savedTestResults = localStorage.getItem('modelTestResults');
+    if (savedTestResults) {
+      try {
+        setTestResults(JSON.parse(savedTestResults));
+      } catch (e) {
+        console.error('Failed to parse modelTestResults from localStorage', e);
+      }
+    }
   }, []);
+
+  // 保存测试结果到 localStorage
+  useEffect(() => {
+    if (Object.keys(testResults).length > 0) {
+      localStorage.setItem('modelTestResults', JSON.stringify(testResults));
+    }
+  }, [testResults]);
 
   if (error) {
     return (
