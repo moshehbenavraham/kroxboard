@@ -17,6 +17,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "nav.monitor": "监控",
     "nav.sessions": "会话列表",
     "nav.stats": "消息统计",
+    "nav.pixelOffice": "像素办公室",
     "nav.config": "配置",
     "nav.skills": "技能管理",
     "nav.alerts": "告警中心",
@@ -201,6 +202,15 @@ const translations: Record<Locale, Record<string, string>> = {
     "gateway.healthy": "Gateway 运行正常",
     "gateway.unhealthy": "Gateway 异常",
     "gateway.fetchError": "无法检查 Gateway 状态",
+
+    // pixel office
+    "pixelOffice.editMode": "编辑布局",
+    "pixelOffice.exitEdit": "退出编辑",
+    "pixelOffice.save": "保存",
+    "pixelOffice.reset": "重置",
+    "pixelOffice.undo": "撤销",
+    "pixelOffice.redo": "重做",
+    "pixelOffice.sound": "音效",
   },
   en: {
     // layout
@@ -214,6 +224,7 @@ const translations: Record<Locale, Record<string, string>> = {
     "nav.monitor": "Monitor",
     "nav.sessions": "Sessions",
     "nav.stats": "Statistics",
+    "nav.pixelOffice": "Pixel Office",
     "nav.config": "Config",
     "nav.skills": "Skills",
     "nav.alerts": "Alerts",
@@ -398,6 +409,15 @@ const translations: Record<Locale, Record<string, string>> = {
     "gateway.healthy": "Gateway is running",
     "gateway.unhealthy": "Gateway is down",
     "gateway.fetchError": "Cannot check Gateway status",
+
+    // pixel office
+    "pixelOffice.editMode": "Edit Layout",
+    "pixelOffice.exitEdit": "Exit Edit",
+    "pixelOffice.save": "Save",
+    "pixelOffice.reset": "Reset",
+    "pixelOffice.undo": "Undo",
+    "pixelOffice.redo": "Redo",
+    "pixelOffice.sound": "Sound",
   },
 };
 
