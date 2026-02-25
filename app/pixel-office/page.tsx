@@ -30,6 +30,52 @@ function formatTokens(n: number): string {
   return String(n)
 }
 
+function formatMs(ms: number): string {
+  if (!ms) return '-'
+  if (ms < 1000) return ms + 'ms'
+  return (ms / 1000).toFixed(1) + 's'
+}
+
+function MiniSparkline({ data, width = 120, height = 24, color: fixedColor }: { data: number[]; width?: number; height?: number; color?: string }) {
+  const hasData = data.some(v => v > 0)
+  if (!hasData) return null
+  const validValues = data.filter(v => v > 0)
+  let trending: 'up' | 'down' | 'flat' = 'flat'
+  if (validValues.length >= 2) {
+    const last = validValues[validValues.length - 1]
+    const prev = validValues[validValues.length - 2]
+    trending = last > prev ? 'up' : last < prev ? 'down' : 'flat'
+  }
+  const color = fixedColor || (trending === 'up' ? '#f87171' : trending === 'down' ? '#4ade80' : '#f59e0b')
+  const max = Math.max(...data)
+  const min = Math.min(...data.filter(v => v > 0), max)
+  const range = max - min || 1
+  const pad = 2
+  const pts = data.map((v, i) => {
+    const x = pad + (i / (data.length - 1)) * (width - pad * 2)
+    const y = v === 0 ? height - pad : (height - pad) - ((v - min) / range) * (height - pad * 2 - 2)
+    return { x, y, v }
+  })
+  const line = pts.map(p => `${p.x},${p.y}`).join(' ')
+  const area = `${pts[0].x},${height} ${line} ${pts[pts.length - 1].x},${height}`
+  const id = `spark-${Math.random().toString(36).slice(2, 8)}`
+  return (
+    <svg width={width} height={height} className="inline-block align-middle">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity={0.3} />
+          <stop offset="100%" stopColor={color} stopOpacity={0.02} />
+        </linearGradient>
+      </defs>
+      <polygon points={area} fill={`url(#${id})`} />
+      <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      {pts.filter(p => p.v > 0).map((p, i) => (
+        <circle key={i} cx={p.x} cy={p.y} r={2} fill={color} opacity={0.9} />
+      ))}
+    </svg>
+  )
+}
+
 /** Convert mouse event to tile coordinates */
 function mouseToTile(
   e: React.MouseEvent, canvas: HTMLCanvasElement, office: OfficeState, zoom: number, pan: { x: number; y: number }
@@ -76,13 +122,14 @@ export default function PixelOfficePage() {
   const [agents, setAgents] = useState<AgentActivity[]>([])
   const [hoveredAgentId, setHoveredAgentId] = useState<number | null>(null)
   const mousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
-  const agentStatsRef = useRef<Map<string, { sessionCount: number; messageCount: number; totalTokens: number; todayAvgResponseMs: number }>>(new Map())
+  const agentStatsRef = useRef<Map<string, { sessionCount: number; messageCount: number; totalTokens: number; todayAvgResponseMs: number; weeklyResponseMs: number[]; weeklyTokens: number[]; lastActive: number | null }>>(new Map())
   const contributionsRef = useRef<ContributionData | null>(null)
   const photographRef = useRef<HTMLImageElement | null>(null)
   const [isEditMode, setIsEditMode] = useState(false)
   const [soundOn, setSoundOn] = useState(true)
   const [editorTick, setEditorTick] = useState(0)
   const [officeReady, setOfficeReady] = useState(false)
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
 
   const forceEditorUpdate = useCallback(() => setEditorTick(t => t + 1), [])
 
@@ -266,7 +313,7 @@ export default function PixelOfficePage() {
       try {
         const res = await fetch('/api/config')
         const data = await res.json()
-        const map = new Map<string, { sessionCount: number; messageCount: number; totalTokens: number; todayAvgResponseMs: number }>()
+        const map = new Map<string, { sessionCount: number; messageCount: number; totalTokens: number; todayAvgResponseMs: number; weeklyResponseMs: number[]; weeklyTokens: number[]; lastActive: number | null }>()
         for (const agent of (data.agents || [])) {
           if (agent.session) {
             map.set(agent.id, {
@@ -274,6 +321,9 @@ export default function PixelOfficePage() {
               messageCount: agent.session.messageCount || 0,
               totalTokens: agent.session.totalTokens || 0,
               todayAvgResponseMs: agent.session.todayAvgResponseMs || 0,
+              weeklyResponseMs: agent.session.weeklyResponseMs || [],
+              weeklyTokens: agent.session.weeklyTokens || [],
+              lastActive: agent.session.lastActive || null,
             })
           }
         }
@@ -437,7 +487,7 @@ export default function PixelOfficePage() {
         return tileX >= f.col && tileX < f.col + entry.footprintW &&
                tileY >= f.row && tileY < f.row + entry.footprintH
       })
-      if (canvasRef.current) canvasRef.current.style.cursor = onCamera ? 'pointer' : 'default'
+      if (canvasRef.current) canvasRef.current.style.cursor = (onCamera || id !== null) ? 'pointer' : 'default'
     }
   }
 
@@ -448,7 +498,7 @@ export default function PixelOfficePage() {
     const office = officeRef.current
     const editor = editorRef.current
     if (!editor.isEditMode) {
-      // Non-edit mode: check camera click
+      // Non-edit mode: check camera click or character click
       if (e.button === 0) {
         const { worldX, worldY } = mouseToTile(e, canvasRef.current, office, zoomRef.current, panRef.current)
         const tileX = worldX / TILE_SIZE
@@ -465,6 +515,17 @@ export default function PixelOfficePage() {
           const img = new Image()
           img.src = `/assets/pixel-office/my-photographic-works/${idx}.webp`
           img.onload = () => { photographRef.current = img }
+        } else {
+          // Check character click
+          const charId = office.getCharacterAt(worldX, worldY)
+          if (charId !== null) {
+            const map = agentIdMapRef.current
+            for (const [aid, cid] of map.entries()) {
+              if (cid === charId) { setSelectedAgentId(aid); break }
+            }
+          } else {
+            setSelectedAgentId(null)
+          }
         }
       }
       return
@@ -778,7 +839,7 @@ export default function PixelOfficePage() {
         </button>
 
         {/* Agent hover tooltip */}
-        {hoveredInfo && hoveredInfo.agent && !isEditMode && (
+        {hoveredInfo && hoveredInfo.agent && !isEditMode && !selectedAgentId && (
           <div className="absolute pointer-events-none z-10 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-sm text-xs shadow-lg"
             style={{ left: Math.min(mousePosRef.current.x + 12, (containerRef.current?.clientWidth || 300) - 180), top: mousePosRef.current.y + 12 }}>
             <div className="flex items-center gap-1.5 mb-1.5">
@@ -793,6 +854,43 @@ export default function PixelOfficePage() {
             </div>
           </div>
         )}
+
+        {/* Agent detail card (click) */}
+        {selectedAgentId && !isEditMode && (() => {
+          const agent = agents.find(a => a.agentId === selectedAgentId)
+          const stats = agentStatsRef.current.get(selectedAgentId)
+          if (!agent) return null
+          const responseColor = stats?.todayAvgResponseMs
+            ? stats.todayAvgResponseMs > 50000 ? 'text-red-400'
+            : stats.todayAvgResponseMs > 30000 ? 'text-yellow-400'
+            : 'text-green-400' : 'text-[var(--text-muted)]'
+          return (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40" onClick={() => setSelectedAgentId(null)}>
+              <div className="w-72 rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-4" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">{agent.emoji}</span>
+                    <div>
+                      <div className="font-semibold text-[var(--text)]">{agent.name}</div>
+                      <span className={`text-[10px] uppercase tracking-wider ${
+                        agent.state === 'working' ? 'text-green-400' :
+                        agent.state === 'idle' ? 'text-yellow-400' : 'text-slate-400'
+                      }`}>{t(`pixelOffice.state.${agent.state}`)}</span>
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedAgentId(null)} className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none">×</button>
+                </div>
+                <div className="space-y-1.5 text-xs">
+                  <div className="flex justify-between"><span className="text-[var(--text-muted)]">{t('agent.sessionCount')}</span><span className="text-[var(--text)]">{stats?.sessionCount ?? '--'}</span></div>
+                  <div className="flex justify-between"><span className="text-[var(--text-muted)]">{t('agent.messageCount')}</span><span className="text-[var(--text)]">{stats?.messageCount ?? '--'}</span></div>
+                  <div className="flex justify-between items-center"><span className="text-[var(--text-muted)]">{t('agent.tokenUsage')}</span><div className="flex items-center gap-2">{stats?.weeklyTokens && <MiniSparkline data={stats.weeklyTokens} color="#4ade80" />}<span className="text-[var(--text)]">{stats ? formatTokens(stats.totalTokens) : '--'}</span></div></div>
+                  <div className="flex justify-between items-center"><span className="text-[var(--text-muted)]">{t('agent.todayAvgResponse')}</span><div className="flex items-center gap-2">{stats?.weeklyResponseMs && <MiniSparkline data={stats.weeklyResponseMs} />}<span className={responseColor}>{stats?.todayAvgResponseMs ? formatMs(stats.todayAvgResponseMs) : '--'}</span></div></div>
+                  {stats?.lastActive && <div className="flex justify-between"><span className="text-[var(--text-muted)]">{t('agent.lastActive')}</span><span className="text-[var(--text)]">{new Date(stats.lastActive).toLocaleString('zh-CN')}</span></div>}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Editor overlays */}
         {isEditMode && (
