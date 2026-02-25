@@ -191,15 +191,26 @@ export default function PixelOfficePage() {
     }
   }, [hoveredAgentId, editorTick, officeReady])
 
-  // Generate mock GitHub contribution heatmap data (once on mount)
+  // Load GitHub contribution heatmap data (real → fallback mock)
   useEffect(() => {
-    const weeks = Array.from({ length: 52 }, () => ({
+    // 先设置 mock 保证立即有内容
+    const mockWeeks = Array.from({ length: 52 }, () => ({
       days: Array.from({ length: 7 }, () => ({
         count: Math.random() < 0.25 ? 0 : Math.floor(Math.random() * 12),
         date: '',
       })),
     }))
-    contributionsRef.current = { weeks, username: 'mock' }
+    contributionsRef.current = { weeks: mockWeeks, username: 'mock' }
+
+    // 异步拉取真实数据
+    fetch('/api/pixel-office/contributions')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && data.weeks) {
+          contributionsRef.current = data
+        }
+      })
+      .catch(() => {})
   }, [])
 
   // Load photograph for right room wall
