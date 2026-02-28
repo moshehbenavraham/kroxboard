@@ -307,6 +307,27 @@ export function renderScene(
         ch.dir === Direction.DOWN ? Math.PI :
         ch.dir === Direction.LEFT ? -Math.PI / 2 :
         0
+      if (ch.lobsterBubbles.length > 0) {
+        const bubbles = ch.lobsterBubbles
+        drawables.push({
+          zY: charZY - 0.05,
+          draw: (c) => {
+            c.save()
+            c.textAlign = 'center'
+            c.textBaseline = 'middle'
+            c.font = `${Math.max(10, Math.round(6 * zoom))}px serif`
+            for (const b of bubbles) {
+              const progress = b.age / 0.8
+              const bx = lobsterX + b.x * zoom
+              const by = lobsterY + (b.y - progress * 8) * zoom
+              const alpha = progress < 0.2 ? progress / 0.2 : progress > 0.7 ? (1 - progress) / 0.3 : 1
+              c.globalAlpha = alpha * 0.9
+              c.fillText('🫧', bx, by)
+            }
+            c.restore()
+          },
+        })
+      }
       drawables.push({
         zY: charZY,
         draw: (c) => {

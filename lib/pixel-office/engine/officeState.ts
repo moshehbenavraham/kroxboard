@@ -33,6 +33,10 @@ const CODE_SNIPPET_LIFETIME = 2.5 // seconds
 const CODE_SNIPPET_SPAWN_RATE = 0.6 // per second
 const PHOTO_COMMENT_LIFETIME = 4.0 // seconds
 const PHOTO_COMMENT_SPAWN_RATE = 2.5 // per second
+const LOBSTER_RAGE_DURATION_SEC = 10
+const LOBSTER_BUBBLE_LIFETIME_SEC = 0.8
+const LOBSTER_BUBBLE_SPAWN_RATE = 12
+const LOBSTER_HIT_RADIUS_PX = 6
 const CODE_SNIPPETS = [
   // JS/TS
   'if (...)', 'else {', 'for (...)', 'return', 'async', 'await', 'try {', 'catch', 'import',
@@ -102,6 +106,7 @@ export class OfficeState {
   private nextSubagentId = -1
   private static CAT_ID = -9999
   private static LOBSTER_ID = -9998
+  private static HUNTER_LOBSTER_ID = -9997
 
   constructor(layout?: OfficeLayout) {
     this.layout = layout || createDefaultLayout()
@@ -114,6 +119,7 @@ export class OfficeState {
     this.doorwayTiles = getDoorwayTiles(this.layout)
     this.spawnCat()
     this.spawnLobster()
+    this.spawnHunterLobster()
   }
 
   /** Rebuild all derived state from a new layout. Reassigns existing characters.
@@ -371,6 +377,158 @@ export class OfficeState {
     ch.state = CharacterState.IDLE
     ch.wanderTimer = 1 + Math.random() * 3
     this.characters.set(id, ch)
+  }
+
+  toggleFirstLobsterRage(): boolean {
+    const lobster = this.characters.get(OfficeState.LOBSTER_ID)
+    if (!lobster || !lobster.isLobster) return false
+    if (lobster.lobsterRageTimer > 0) {
+      lobster.lobsterRageTimer = 0
+      lobster.lobsterBubbles = []
+      return false
+    }
+    lobster.lobsterRageTimer = LOBSTER_RAGE_DURATION_SEC
+    return true
+  }
+
+  getFirstLobsterAt(worldX: number, worldY: number): number | null {
+    const lobster = this.characters.get(OfficeState.LOBSTER_ID)
+    if (!lobster || lobster.matrixEffect === 'despawn') return null
+    const cx = lobster.x
+    const cy = lobster.y + 2
+    const dx = worldX - cx
+    const dy = worldY - cy
+    const hitR = LOBSTER_HIT_RADIUS_PX
+    if (dx * dx + dy * dy <= hitR * hitR) return lobster.id
+    return null
+  }
+
+  /** Spawn the hunter lobster at a random walkable tile */
+  spawnHunterLobster(): void {
+    const id = OfficeState.HUNTER_LOBSTER_ID
+    if (this.characters.has(id)) return
+    const spawn = this.walkableTiles.length > 0
+      ? this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)]
+      : { col: 1, row: 1 }
+    const ch = createCharacter(id, 0, null, null, 0)
+    ch.isLobster = true
+    ch.tileCol = spawn.col
+    ch.tileRow = spawn.row
+    ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2
+    ch.y = spawn.row * TILE_SIZE + TILE_SIZE / 2
+    ch.state = CharacterState.IDLE
+    ch.wanderTimer = 1 + Math.random() * 3
+    this.characters.set(id, ch)
+  }
+
+  private getFirstIdleHumanoid(): Character | null {
+    const list = Array.from(this.characters.values())
+      .filter(ch => !ch.isCat && !ch.isLobster && ch.state === CharacterState.IDLE && ch.matrixEffect !== 'despawn')
+      .sort((a, b) => a.id - b.id)
+    return list[0] || null
+  }
+
+  private faceToward(ch: Character, target: Character): void {
+    const dx = target.tileCol - ch.tileCol
+    const dy = target.tileRow - ch.tileRow
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      ch.dir = dx >= 0 ? Direction.RIGHT : Direction.LEFT
+    } else {
+      ch.dir = dy >= 0 ? Direction.DOWN : Direction.UP
+    }
+  }
+
+  private spawnLobsterBubble(ch: Character): void {
+    let tailX = 0
+    let tailY = 0
+    if (ch.dir === Direction.RIGHT) tailX = -6
+    else if (ch.dir === Direction.LEFT) tailX = 6
+    else if (ch.dir === Direction.UP) tailY = 6
+    else tailY = -6
+    ch.lobsterBubbles.push({
+      age: 0,
+      x: tailX + (Math.random() - 0.5) * 2.5,
+      y: tailY + (Math.random() - 0.5) * 2.5,
+    })
+  }
+
+  /**
+   * Hunter lobster behavior:
+   * - No idle humanoid -> default wandering (same as normal lobster)
+   * - Has idle humanoid -> follow while staying around half a tile away
+   */
+  private updateHunterLobster(ch: Character, dt: number, idleTarget: Character | null): void {
+    if (!idleTarget) {
+      this.withOwnSeatUnblocked(ch, () =>
+        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints)
+      )
+      return
+    }
+
+    const targetDistancePx = TILE_SIZE * 0.5
+    const stopDistancePx = TILE_SIZE * 0.45
+    const dx = idleTarget.x - ch.x
+    const dy = idleTarget.y - ch.y
+    const distPx = Math.hypot(dx, dy)
+
+    // Close enough: hold position and face the target.
+    if (distPx <= stopDistancePx) {
+      ch.path = []
+      ch.moveProgress = 0
+      ch.state = CharacterState.IDLE
+      ch.frame = 0
+      ch.frameTimer = 0
+      this.faceToward(ch, idleTarget)
+      ch.wanderTimer = 60
+      this.withOwnSeatUnblocked(ch, () =>
+        updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints)
+      )
+      return
+    }
+
+    // If we are already near half-tile distance, hold and face.
+    if (Math.abs(distPx - targetDistancePx) <= TILE_SIZE * 0.2) {
+      ch.path = []
+      ch.moveProgress = 0
+      ch.state = CharacterState.IDLE
+      ch.frame = 0
+      ch.frameTimer = 0
+      this.faceToward(ch, idleTarget)
+    } else {
+      // Repath to target's tile so motion keeps following; we'll stop early at half-tile distance.
+      const destination = { col: idleTarget.tileCol, row: idleTarget.tileRow }
+      const last = ch.path[ch.path.length - 1]
+      const keepsCurrentPath = last && last.col === destination.col && last.row === destination.row
+      if (!keepsCurrentPath) {
+        const newPath = findPath(ch.tileCol, ch.tileRow, destination.col, destination.row, this.tileMap, this.blockedTiles)
+        if (newPath.length > 0) {
+          ch.path = newPath
+          ch.moveProgress = 0
+          ch.state = CharacterState.WALK
+          ch.frame = 0
+          ch.frameTimer = 0
+        }
+      }
+    }
+
+    // Keep timer high so cat/lobster FSM won't pick a random wander target while tracking.
+    ch.wanderTimer = 60
+    this.withOwnSeatUnblocked(ch, () =>
+      updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints)
+    )
+
+    // Clamp after movement so it never catches the idle humanoid.
+    const dxAfter = idleTarget.x - ch.x
+    const dyAfter = idleTarget.y - ch.y
+    const distAfterPx = Math.hypot(dxAfter, dyAfter)
+    if (distAfterPx <= stopDistancePx) {
+      ch.path = []
+      ch.moveProgress = 0
+      ch.state = CharacterState.IDLE
+      ch.frame = 0
+      ch.frameTimer = 0
+      this.faceToward(ch, idleTarget)
+    }
   }
 
   removeAgent(id: number): void {
@@ -741,6 +899,7 @@ export class OfficeState {
 
   update(dt: number): void {
     const toDelete: number[] = []
+    const firstIdleHumanoid = this.getFirstIdleHumanoid()
     for (const ch of this.characters.values()) {
       // Handle matrix effect animation
       if (ch.matrixEffect) {
@@ -759,10 +918,26 @@ export class OfficeState {
         continue // skip normal FSM while effect is active
       }
 
+      if (ch.id === OfficeState.HUNTER_LOBSTER_ID) {
+        this.updateHunterLobster(ch, dt, firstIdleHumanoid)
+        continue
+      }
+
       // Temporarily unblock own seat so character can pathfind to it
       this.withOwnSeatUnblocked(ch, () =>
         updateCharacter(ch, dt, this.walkableTiles, this.seats, this.tileMap, this.blockedTiles, this.interactionPoints)
       )
+
+      if (ch.isLobster) {
+        if (ch.lobsterRageTimer > 0) {
+          ch.lobsterRageTimer = Math.max(0, ch.lobsterRageTimer - dt)
+          if (Math.random() < dt * LOBSTER_BUBBLE_SPAWN_RATE) {
+            this.spawnLobsterBubble(ch)
+          }
+        }
+        for (const b of ch.lobsterBubbles) b.age += dt
+        ch.lobsterBubbles = ch.lobsterBubbles.filter(b => b.age < LOBSTER_BUBBLE_LIFETIME_SEC)
+      }
 
       // Tick bubble timer for waiting bubbles
       if (ch.bubbleType === 'waiting') {

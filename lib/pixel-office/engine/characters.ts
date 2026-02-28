@@ -95,6 +95,8 @@ export function createCharacter(
     interactionTarget: null,
     isCat: false,
     isLobster: false,
+    lobsterRageTimer: 0,
+    lobsterBubbles: [],
     codeSnippets: [],
     photoComments: [],
     isViewingPhoto: false,
@@ -368,7 +370,8 @@ function updateCat(
   walkableTiles: Array<{ col: number; row: number }>,
   tileMap: TileTypeVal[][], blockedTiles: Set<string>,
 ): void {
-  const catSpeed = WALK_SPEED_PX_PER_SEC * CAT_WALK_SPEED_FACTOR
+  const rageSpeedFactor = ch.isLobster && ch.lobsterRageTimer > 0 ? 2.2 : 1
+  const catSpeed = WALK_SPEED_PX_PER_SEC * CAT_WALK_SPEED_FACTOR * rageSpeedFactor
 
   switch (ch.state) {
     case CharacterState.IDLE: {

@@ -200,6 +200,8 @@ export interface Character {
   interactionTarget: { col: number; row: number; facingDir: Direction; furnitureType?: string } | null
   isCat: boolean
   isLobster: boolean
+  lobsterRageTimer: number
+  lobsterBubbles: Array<{ age: number; x: number; y: number }>
   codeSnippets: Array<{ text: string; age: number; x: number; y: number }>
   photoComments: Array<{ text: string; age: number; x: number }>
   isViewingPhoto: boolean

@@ -555,6 +555,7 @@ export default function PixelOfficePage() {
     } else {
       // Normal mode: hover detection
       const id = office.getCharacterAt(worldX, worldY)
+      const lobsterId = office.getFirstLobsterAt(worldX, worldY)
       setHoveredAgentId(id)
       // Pointer cursor on camera furniture
       const tileX = worldX / TILE_SIZE
@@ -610,7 +611,7 @@ export default function PixelOfficePage() {
       })
       const onPhoto = photographRef.current && tileX >= 10 && tileX < 17 && tileY >= -0.5 && tileY < 1
       const onHeatmap = contributionsRef.current && contributionsRef.current.username !== 'mock' && tileX >= 1 && tileX < 10 && tileY >= -0.5 && tileY < 1
-      if (canvasRef.current) canvasRef.current.style.cursor = (onCamera || onPC || onLibrary || onWhiteboard || onClock || onPhone || onSofa || id !== null || onPhoto || onHeatmap) ? 'pointer' : 'default'
+      if (canvasRef.current) canvasRef.current.style.cursor = (onCamera || onPC || onLibrary || onWhiteboard || onClock || onPhone || onSofa || id !== null || lobsterId !== null || onPhoto || onHeatmap) ? 'pointer' : 'default'
     }
   }
 
@@ -708,6 +709,9 @@ export default function PixelOfficePage() {
         } else if (contributionsRef.current && contributionsRef.current.username !== 'mock' && tileX >= 1 && tileX < 10 && tileY >= -0.5 && tileY < 1) {
           // Click on GitHub contribution heatmap — open profile
           window.open(`https://github.com/${contributionsRef.current.username}`, '_blank')
+        } else if (office.getFirstLobsterAt(worldX, worldY) !== null) {
+          // Click on first lobster — toggle rage mode
+          office.toggleFirstLobsterRage()
         } else {
           // Check character click
           const charId = office.getCharacterAt(worldX, worldY)
