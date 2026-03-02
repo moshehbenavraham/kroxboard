@@ -289,7 +289,6 @@ export function createDefaultLayout(): OfficeLayout {
     { uid: 'chair-l4', type: FurnitureType.BENCH, col: 6.5, row: 7 },
     { uid: 'bookshelf-l', type: FurnitureType.BOOKSHELF, col: 1, row: 5 },
     { uid: 'plant-l1', type: FurnitureType.PLANT, col: 1, row: 1 },
-    { uid: 'plant-l2', type: FurnitureType.PLANT_SMALL, col: 9, row: 1 },
     { uid: 'lamp-l', type: FurnitureType.LAMP, col: 1, row: 3 },
     { uid: 'pc-l1', type: FurnitureType.PC, col: 3.5, row: 2.75, rotation: 180 },
     { uid: 'pc-l2', type: FurnitureType.PC, col: 6.5, row: 2.75, rotation: 180 },
