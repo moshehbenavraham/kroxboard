@@ -87,11 +87,11 @@ function MiniSparkline({ data, width = 120, height = 24, color: fixedColor }: { 
 
 /** Convert mouse event to tile coordinates */
 function mouseToTile(
-  e: React.MouseEvent, canvas: HTMLCanvasElement, office: OfficeState, zoom: number, pan: { x: number; y: number }
+  clientX: number, clientY: number, canvas: HTMLCanvasElement, office: OfficeState, zoom: number, pan: { x: number; y: number }
 ): { col: number; row: number; worldX: number; worldY: number } {
   const rect = canvas.getBoundingClientRect()
-  const x = e.clientX - rect.left
-  const y = e.clientY - rect.top
+  const x = clientX - rect.left
+  const y = clientY - rect.top
   const cols = office.layout.cols
   const rows = office.layout.rows
   const mapW = cols * TILE_SIZE * zoom
@@ -114,8 +114,53 @@ function getGhostBorderDirection(col: number, row: number, cols: number, rows: n
   return null
 }
 
-const FIXED_CANVAS_ZOOM = 2.5
+function getLayoutContentBounds(layout: OfficeLayout): { minCol: number; maxCol: number; minRow: number; maxRow: number } {
+  let minCol = layout.cols - 1
+  let maxCol = 0
+  let minRow = layout.rows - 1
+  let maxRow = 0
+  let hasContent = false
+
+  for (let r = 0; r < layout.rows; r++) {
+    for (let c = 0; c < layout.cols; c++) {
+      if (layout.tiles[r * layout.cols + c] === TileType.VOID) continue
+      hasContent = true
+      if (c < minCol) minCol = c
+      if (c > maxCol) maxCol = c
+      if (r < minRow) minRow = r
+      if (r > maxRow) maxRow = r
+    }
+  }
+
+  for (const f of layout.furniture) {
+    const entry = getCatalogEntry(f.type)
+    const w = Math.max(1, entry?.footprintW ?? 1)
+    const h = Math.max(1, entry?.footprintH ?? 1)
+    hasContent = true
+    if (f.col < minCol) minCol = f.col
+    if (f.col + w - 1 > maxCol) maxCol = f.col + w - 1
+    if (f.row < minRow) minRow = f.row
+    if (f.row + h - 1 > maxRow) maxRow = f.row + h - 1
+  }
+
+  if (!hasContent) return { minCol: 0, maxCol: layout.cols - 1, minRow: 0, maxRow: layout.rows - 1 }
+  return {
+    minCol: Math.max(0, minCol),
+    maxCol: Math.min(layout.cols - 1, maxCol),
+    minRow: Math.max(0, minRow),
+    maxRow: Math.min(layout.rows - 1, maxRow),
+  }
+}
+
+const DESKTOP_CANVAS_ZOOM = 2.5
+const MOBILE_CANVAS_ZOOM = 1.9
+const MOBILE_MIN_ZOOM = 0.55
+const MOBILE_MAX_ZOOM = 6
+const MOBILE_FIT_PADDING_PX = 2
+const MOBILE_TOP_EXTRA_TILES = 0.5
 const CODE_SNIPPET_LIFETIME_SEC = 5.5
+const FLOATING_TICK_INTERVAL_DESKTOP_MS = 48
+const FLOATING_TICK_INTERVAL_MOBILE_MS = 140
 
 let cachedOfficeState: OfficeState | null = null
 let cachedEditorState: EditorState | null = null
@@ -136,7 +181,7 @@ export default function PixelOfficePage() {
   const editorRef = useRef<EditorState>(cachedEditorState ?? new EditorState())
   const agentIdMapRef = useRef<Map<string, number>>(new Map(cachedAgentIdMap))
   const nextIdRef = useRef<{ current: number }>({ current: cachedNextCharacterId })
-  const zoomRef = useRef<number>(FIXED_CANVAS_ZOOM)
+  const zoomRef = useRef<number>(DESKTOP_CANVAS_ZOOM)
   const panRef = useRef<{ x: number; y: number }>(cachedPan)
   const savedLayoutRef = useRef<OfficeLayout | null>(cachedSavedLayout)
   const animationFrameIdRef = useRef<number | null>(null)
@@ -169,7 +214,9 @@ export default function PixelOfficePage() {
   const idleRankRef = useRef<Array<{ agentId: string; onlineMinutes: number; activeMinutes: number; idleMinutes: number; idlePercent: number }> | null>(null)
   const floatingCommentsRef = useRef<Array<{ key: string; text: string; x: number; y: number; opacity: number }>>([])
   const floatingCodeRef = useRef<Array<{ key: string; text: string; x: number; y: number; opacity: number }>>([])
+  const floatingTickUpdatedAtRef = useRef<number>(0)
   const [floatingTick, setFloatingTick] = useState(0)
+  const [isMobileViewport, setIsMobileViewport] = useState(false)
   const forceEditorUpdate = useCallback(() => setEditorTick(t => t + 1), [])
 
   const fetchVersionInfo = useCallback(async (forceLatest = false) => {
@@ -187,6 +234,14 @@ export default function PixelOfficePage() {
     } finally {
       setVersionLoading(false)
     }
+  }, [])
+
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 767px)")
+    const apply = () => setIsMobileViewport(mql.matches)
+    apply()
+    mql.addEventListener("change", apply)
+    return () => mql.removeEventListener("change", apply)
   }, [])
 
   // Load saved layout and sound preference
@@ -283,8 +338,32 @@ export default function PixelOfficePage() {
       const width = container.clientWidth
       const height = container.clientHeight
 
-      // Fixed zoom: disable runtime zooming for now
-      zoomRef.current = FIXED_CANVAS_ZOOM
+      // Keep desktop zoom fixed. On mobile, fit the whole office into current viewport.
+      if (isMobileViewport) {
+        const layout = office.layout
+        const rows = layout.rows
+        const cols = layout.cols
+        const baseW = cols * TILE_SIZE
+        const topExtraTiles = MOBILE_TOP_EXTRA_TILES
+        const fitW = Math.max(1, width - MOBILE_FIT_PADDING_PX * 2) / Math.max(1, baseW)
+        const fitH = Math.max(1, height - MOBILE_FIT_PADDING_PX * 2) / Math.max(1, (rows + topExtraTiles) * TILE_SIZE)
+        const fitZoom = Math.min(fitW, fitH)
+        const nextZoom = Math.max(MOBILE_MIN_ZOOM, Math.min(MOBILE_MAX_ZOOM, fitZoom || MOBILE_CANVAS_ZOOM))
+        zoomRef.current = nextZoom
+
+        const mapH = rows * TILE_SIZE * nextZoom
+        const centerOffsetY = (height - mapH) / 2
+        const topExtraPx = topExtraTiles * TILE_SIZE * nextZoom
+        const minPanY = MOBILE_FIT_PADDING_PX + topExtraPx - centerOffsetY
+        const maxPanY = height - MOBILE_FIT_PADDING_PX - (centerOffsetY + mapH)
+        const targetPanY = minPanY > maxPanY ? minPanY : Math.min(maxPanY, Math.max(minPanY, 0))
+        panRef.current = { x: 0, y: Math.round(targetPanY) }
+      } else {
+        zoomRef.current = DESKTOP_CANVAS_ZOOM
+        if (panRef.current.x !== 0 || panRef.current.y !== 0) {
+          panRef.current = { x: 0, y: 0 }
+        }
+      }
       const dpr = window.devicePixelRatio || 1
       office.update(dt)
 
@@ -354,50 +433,57 @@ export default function PixelOfficePage() {
           const cid = agentIdMapRef.current.get(a.agentId)
           if (typeof cid === 'number') workingCharIds.add(cid)
         }
-        for (const ch of office.getCharacters()) {
-          if (ch.photoComments.length === 0) continue
-          const anchorX = ox + ch.x * zoom
-          const anchorY = containerTop + oy + (ch.y - 24) * zoom
-          const totalDist = anchorY + 20
-          for (let i = 0; i < ch.photoComments.length; i++) {
-            const pc = ch.photoComments[i]
-            const progress = pc.age / lifetime
-            let alpha = 1.0
-            if (pc.age < 0.3) alpha = pc.age / 0.3
-            if (progress > 0.6) alpha = (1 - progress) / 0.4
-            const floatY = progress * totalDist
-            items.push({
-              key: `${ch.id}-${i}-${pc.text}`,
-              text: pc.text,
-              x: anchorX + pc.x * zoom,
-              y: anchorY - floatY,
-              opacity: Math.max(0, alpha * 0.95),
-            })
+        if (!isMobileViewport) {
+          for (const ch of office.getCharacters()) {
+            if (ch.photoComments.length === 0) continue
+            const anchorX = ox + ch.x * zoom
+            const anchorY = containerTop + oy + (ch.y - 24) * zoom
+            const totalDist = anchorY + 20
+            for (let i = 0; i < ch.photoComments.length; i++) {
+              const pc = ch.photoComments[i]
+              const progress = pc.age / lifetime
+              let alpha = 1.0
+              if (pc.age < 0.3) alpha = pc.age / 0.3
+              if (progress > 0.6) alpha = (1 - progress) / 0.4
+              const floatY = progress * totalDist
+              items.push({
+                key: `${ch.id}-${i}-${pc.text}`,
+                text: pc.text,
+                x: anchorX + pc.x * zoom,
+                y: anchorY - floatY,
+                opacity: Math.max(0, alpha * 0.95),
+              })
+            }
           }
-        }
-        for (const ch of office.getCharacters()) {
-          if (!workingCharIds.has(ch.id)) continue
-          if (ch.codeSnippets.length === 0) continue
-          const anchorX = ox + ch.x * zoom
-          const anchorY = containerTop + oy + (ch.y - 10) * zoom
-          const totalDist = anchorY + 24
-          for (let i = 0; i < ch.codeSnippets.length; i++) {
-            const s = ch.codeSnippets[i]
-            const progress = s.age / CODE_SNIPPET_LIFETIME_SEC
-            if (progress <= 0 || progress >= 1) continue
-            const alpha = progress < 0.15 ? progress / 0.15 : progress > 0.88 ? (1 - progress) / 0.12 : 1
-            codeItems.push({
-              key: `${ch.id}-code-${i}-${s.text}`,
-              text: s.text,
-              x: anchorX + s.x * zoom,
-              y: anchorY - progress * totalDist,
-              opacity: Math.max(0, alpha * 0.9),
-            })
+          for (const ch of office.getCharacters()) {
+            if (!workingCharIds.has(ch.id)) continue
+            if (ch.codeSnippets.length === 0) continue
+            const anchorX = ox + ch.x * zoom
+            const anchorY = containerTop + oy + (ch.y - 10) * zoom
+            const totalDist = anchorY + 24
+            for (let i = 0; i < ch.codeSnippets.length; i++) {
+              const s = ch.codeSnippets[i]
+              const progress = s.age / CODE_SNIPPET_LIFETIME_SEC
+              if (progress <= 0 || progress >= 1) continue
+              const alpha = progress < 0.15 ? progress / 0.15 : progress > 0.88 ? (1 - progress) / 0.12 : 1
+              codeItems.push({
+                key: `${ch.id}-code-${i}-${s.text}`,
+                text: s.text,
+                x: anchorX + s.x * zoom,
+                y: anchorY - progress * totalDist,
+                opacity: Math.max(0, alpha * 0.9),
+              })
+            }
           }
         }
         floatingCommentsRef.current = items
         floatingCodeRef.current = codeItems
-        setFloatingTick(t => t + 1)
+        const now = performance.now()
+        const tickInterval = isMobileViewport ? FLOATING_TICK_INTERVAL_MOBILE_MS : FLOATING_TICK_INTERVAL_DESKTOP_MS
+        if (now - floatingTickUpdatedAtRef.current >= tickInterval) {
+          floatingTickUpdatedAtRef.current = now
+          setFloatingTick(t => t + 1)
+        }
       }
       animationFrameIdRef.current = requestAnimationFrame(render)
     }
@@ -405,7 +491,7 @@ export default function PixelOfficePage() {
     return () => {
       if (animationFrameIdRef.current !== null) cancelAnimationFrame(animationFrameIdRef.current)
     }
-  }, [hoveredAgentId, editorTick, officeReady, agents])
+  }, [hoveredAgentId, editorTick, officeReady, agents, isMobileViewport])
 
   // Load GitHub contribution heatmap data (real → fallback mock)
   useEffect(() => {
@@ -618,7 +704,7 @@ export default function PixelOfficePage() {
     const editor = editorRef.current
     const rect = canvasRef.current.getBoundingClientRect()
     mousePosRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
-    const { col, row, worldX, worldY } = mouseToTile(e, canvasRef.current, office, zoomRef.current, panRef.current)
+    const { col, row, worldX, worldY } = mouseToTile(e.clientX, e.clientY, canvasRef.current, office, zoomRef.current, panRef.current)
 
     if (editor.isEditMode) {
       // Update ghost preview
@@ -745,7 +831,7 @@ export default function PixelOfficePage() {
     if (!editor.isEditMode) {
       // Non-edit mode: check camera click or character click
       if (e.button === 0) {
-        const { worldX, worldY } = mouseToTile(e, canvasRef.current, office, zoomRef.current, panRef.current)
+        const { worldX, worldY } = mouseToTile(e.clientX, e.clientY, canvasRef.current, office, zoomRef.current, panRef.current)
         const tileX = worldX / TILE_SIZE
         const tileY = worldY / TILE_SIZE
         const clickedCamera = office.layout.furniture.find(f => {
@@ -849,7 +935,7 @@ export default function PixelOfficePage() {
       }
       return
     }
-    const { col, row } = mouseToTile(e, canvasRef.current, office, zoomRef.current, panRef.current)
+    const { col, row } = mouseToTile(e.clientX, e.clientY, canvasRef.current, office, zoomRef.current, panRef.current)
 
     if (e.button === 0) {
       // Left click
@@ -965,10 +1051,29 @@ export default function PixelOfficePage() {
     e.preventDefault()
     if (!canvasRef.current || !officeRef.current) return
     const office = officeRef.current
-    const { col, row } = mouseToTile(e, canvasRef.current, office, zoomRef.current, panRef.current)
+    const { col, row } = mouseToTile(e.clientX, e.clientY, canvasRef.current, office, zoomRef.current, panRef.current)
     if (col >= 0 && col < office.layout.cols && row >= 0 && row < office.layout.rows) {
       applyEdit(paintTile(office.layout, col, row, TileType.VOID as TileTypeVal))
     }
+  }
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'mouse') return
+    e.preventDefault()
+    handleMouseMove({ clientX: e.clientX, clientY: e.clientY, button: 0 } as React.MouseEvent)
+  }
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'mouse') return
+    e.preventDefault()
+    if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId)
+    handleMouseDown({ clientX: e.clientX, clientY: e.clientY, button: 0 } as React.MouseEvent)
+  }
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.pointerType === 'mouse') return
+    e.preventDefault()
+    handleMouseUp()
   }
 
   // ── Keyboard events ──────────────────────────────────────────
@@ -1016,6 +1121,42 @@ export default function PixelOfficePage() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [applyEdit, handleUndo, handleRedo, forceEditorUpdate])
+
+  // Esc closes modal overlays in non-edit mode for keyboard accessibility.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || isEditMode) return
+      if (fullscreenPhoto) {
+        setFullscreenPhoto(false)
+        return
+      }
+      if (showIdleRank) {
+        setShowIdleRank(false)
+        return
+      }
+      if (showPhonePanel) {
+        setShowPhonePanel(false)
+        return
+      }
+      if (showActivityHeatmap) {
+        setShowActivityHeatmap(false)
+        return
+      }
+      if (showTokenRank) {
+        setShowTokenRank(false)
+        return
+      }
+      if (showModelPanel) {
+        setShowModelPanel(false)
+        return
+      }
+      if (selectedAgentId) {
+        setSelectedAgentId(null)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [fullscreenPhoto, isEditMode, selectedAgentId, showActivityHeatmap, showIdleRank, showModelPanel, showPhonePanel, showTokenRank])
 
   // ── Editor toolbar callbacks ──────────────────────────────────
   const handleToolChange = useCallback((tool: EditTool) => {
@@ -1074,9 +1215,9 @@ export default function PixelOfficePage() {
   }, [])
 
   const resetView = useCallback(() => {
-    zoomRef.current = FIXED_CANVAS_ZOOM
+    zoomRef.current = isMobileViewport ? MOBILE_CANVAS_ZOOM : DESKTOP_CANVAS_ZOOM
     panRef.current = { x: 0, y: 0 }
-  }, [])
+  }, [isMobileViewport])
 
   // ── Hovered agent tooltip data ──────────────────────────────
   const getHoveredAgentInfo = useCallback(() => {
@@ -1097,9 +1238,16 @@ export default function PixelOfficePage() {
   const editor = editorRef.current
   const selectedItem = editor.selectedFurnitureUid
     ? officeRef.current?.layout.furniture.find(f => f.uid === editor.selectedFurnitureUid) : null
+  const modalOverlayClass = isMobileViewport
+    ? "absolute inset-0 z-20 flex items-end justify-center bg-black/50"
+    : "absolute inset-0 z-20 flex items-center justify-center bg-black/40"
+  const modalPanelClass = (desktopWidth = "w-80", maxHeight = "max-h-[80%]") =>
+    isMobileViewport
+      ? `w-full ${maxHeight} overflow-y-auto rounded-t-2xl border-x border-t border-[var(--border)] bg-[var(--card)] shadow-2xl p-4 pb-6`
+      : `${desktopWidth} ${maxHeight} overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-4`
 
   return (
-    <div className="flex flex-col h-full relative overflow-hidden">
+    <div className="relative flex flex-col overflow-hidden h-[calc(100dvh-3.5rem)] md:h-full">
       {/* Floating photo comment DOM bubbles */}
       {floatingCommentsRef.current.map(fc => (
         <div key={fc.key} className="absolute pointer-events-none z-30 whitespace-nowrap"
@@ -1123,16 +1271,34 @@ export default function PixelOfficePage() {
         </div>
       ))}
       {/* Top bar: agent tags + controls */}
-      <div className="flex flex-wrap items-center gap-2 p-4 border-b border-[var(--border)]">
-        <span className="text-sm font-bold text-[var(--text)] mr-2">{t('pixelOffice.title')}</span>
-        <div className="flex flex-wrap gap-2 flex-1">
+      <div className="flex flex-col gap-2 p-3 md:p-4 border-b border-[var(--border)]">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-bold text-[var(--text)]">{t('pixelOffice.title')}</span>
+          <div className="flex gap-2">
+            <button onClick={toggleSound}
+              className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                soundOn ? 'bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--accent)]'
+                  : 'bg-[var(--card)] border-[var(--border)] text-[var(--text-muted)]'
+              }`}>
+              {soundOn ? '🔔' : '🔕'} {t('pixelOffice.sound')}
+            </button>
+            <button onClick={toggleEditMode}
+              className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                isEditMode ? 'bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--accent)]'
+                  : 'bg-[var(--card)] border-[var(--border)] text-[var(--text-muted)]'
+              }`}>
+              {isEditMode ? t('pixelOffice.exitEdit') : t('pixelOffice.editMode')}
+            </button>
+          </div>
+        </div>
+        <div className="flex gap-2 flex-1 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible">
           {agents.map(agent => (
-            <div key={agent.agentId} className={`pixel-agent-chip inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors ${
-              agent.state === 'working' ? 'pixel-agent-chip-working animate-pulse' :
-              agent.state === 'idle' ? 'pixel-agent-chip-idle animate-pulse' :
+            <div key={agent.agentId} className={`shrink-0 pixel-agent-chip inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors ${
+              agent.state === 'working' ? `pixel-agent-chip-working${isMobileViewport ? '' : ' animate-pulse'}` :
+              agent.state === 'idle' ? `pixel-agent-chip-idle${isMobileViewport ? '' : ' animate-pulse'}` :
               'pixel-agent-chip-neutral'
             }`}
-              {...(agent.state === 'working' ? { style: { animationDuration: '1.3s' } } : {})}
+              {...(agent.state === 'working' && !isMobileViewport ? { style: { animationDuration: '1.3s' } } : {})}
             >
               <span>{agent.emoji}</span>
               <span className="text-sm">{agent.name}</span>
@@ -1146,22 +1312,6 @@ export default function PixelOfficePage() {
             <div className="text-[var(--text-muted)] text-sm">{t('common.noData')}</div>
           )}
         </div>
-        <div className="flex gap-2">
-          <button onClick={toggleSound}
-            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
-              soundOn ? 'bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--accent)]'
-                : 'bg-[var(--card)] border-[var(--border)] text-[var(--text-muted)]'
-            }`}>
-            {soundOn ? '🔔' : '🔕'} {t('pixelOffice.sound')}
-          </button>
-          <button onClick={toggleEditMode}
-            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
-              isEditMode ? 'bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--accent)]'
-                : 'bg-[var(--card)] border-[var(--border)] text-[var(--text-muted)]'
-            }`}>
-            {isEditMode ? t('pixelOffice.exitEdit') : t('pixelOffice.editMode')}
-          </button>
-        </div>
       </div>
 
       {/* Canvas */}
@@ -1169,8 +1319,13 @@ export default function PixelOfficePage() {
         <canvas ref={canvasRef}
           onMouseMove={handleMouseMove}
           onMouseDown={handleMouseDown} onMouseUp={handleMouseUp}
+          onPointerMove={handlePointerMove}
+          onPointerDown={handlePointerDown}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
           onContextMenu={handleContextMenu}
-          className="w-full h-full" />
+          className="w-full h-full"
+          style={{ touchAction: 'none' }} />
         {!officeReady && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#1a1a2e]/85 pointer-events-none">
             <div className="px-4 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm text-[var(--text-muted)]">
@@ -1203,7 +1358,7 @@ export default function PixelOfficePage() {
         </button>
 
         {/* Agent hover tooltip */}
-        {hoveredInfo && hoveredInfo.agent && !isEditMode && !selectedAgentId && (
+        {hoveredInfo && hoveredInfo.agent && !isEditMode && !selectedAgentId && !isMobileViewport && (
           <div className="absolute pointer-events-none z-10 px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-sm text-xs shadow-lg"
             style={{ left: Math.min(mousePosRef.current.x + 12, (containerRef.current?.clientWidth || 300) - 180), top: mousePosRef.current.y + 12 }}>
             <div className="flex items-center gap-1.5 mb-1.5">
@@ -1229,8 +1384,8 @@ export default function PixelOfficePage() {
             : stats.todayAvgResponseMs > 30000 ? 'text-yellow-400'
             : 'text-green-400' : 'text-[var(--text-muted)]'
           return (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40" onClick={() => setSelectedAgentId(null)}>
-              <div className="w-72 rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-4" onClick={e => e.stopPropagation()}>
+            <div className={modalOverlayClass} onClick={() => setSelectedAgentId(null)}>
+              <div className={modalPanelClass("w-72", "max-h-[78%]")} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     <span className="text-2xl">{agent.emoji}</span>
@@ -1258,8 +1413,8 @@ export default function PixelOfficePage() {
 
         {/* Model panel (bookshelf click) */}
         {showModelPanel && !isEditMode && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40" onClick={() => setShowModelPanel(false)}>
-            <div className="w-80 max-h-[80%] overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-4" onClick={e => e.stopPropagation()}>
+          <div className={modalOverlayClass} onClick={() => setShowModelPanel(false)}>
+            <div className={modalPanelClass("w-80")} onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between mb-3">
                 <span className="font-semibold text-[var(--text)]">📚 {t('models.title')}</span>
                 <button onClick={() => setShowModelPanel(false)} className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none">×</button>
@@ -1303,8 +1458,8 @@ export default function PixelOfficePage() {
             .sort((a, b) => b.tokens - a.tokens)
           const maxTokens = ranked[0]?.tokens || 1
           return (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40" onClick={() => setShowTokenRank(false)}>
-              <div className="w-80 rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-4" onClick={e => e.stopPropagation()}>
+            <div className={modalOverlayClass} onClick={() => setShowTokenRank(false)}>
+              <div className={modalPanelClass("w-80", "max-h-[78%]")} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-3">
                   <span className="font-semibold text-[var(--text)]">📊 Token {t('agent.tokenUsage')}</span>
                   <button onClick={() => setShowTokenRank(false)} className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none">×</button>
@@ -1348,8 +1503,8 @@ export default function PixelOfficePage() {
           const svgW = leftPad + 24 * (cellSize + gap)
           const svgH = topPad + 7 * (cellSize + gap)
           return (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40" onClick={() => setShowActivityHeatmap(false)}>
-              <div className="max-h-[85%] overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-4" onClick={e => e.stopPropagation()}>
+            <div className={modalOverlayClass} onClick={() => setShowActivityHeatmap(false)}>
+              <div className={modalPanelClass("w-[min(94vw,56rem)]", "max-h-[85%]")} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-3">
                   <span className="font-semibold text-[var(--text)]">🕐 {t('pixelOffice.heatmap.title')}</span>
                   <button onClick={() => setShowActivityHeatmap(false)} className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none">×</button>
@@ -1370,23 +1525,25 @@ export default function PixelOfficePage() {
                             <span>{agent?.emoji || '🤖'}</span>
                             <span className="text-xs font-semibold text-[var(--text)]">{agent?.name || agentId}</span>
                           </div>
-                          <svg width={svgW} height={svgH} className="block">
-                            {hourLabels.map(h => (
-                              <text key={h} x={leftPad + h * (cellSize + gap) + cellSize / 2} y={topPad - 6} textAnchor="middle" fontSize={9} fill="var(--text-muted)">{h}</text>
-                            ))}
-                            {dayLabels.map((label, d) => (
-                              <text key={d} x={leftPad - 4} y={topPad + d * (cellSize + gap) + cellSize / 2 + 3} textAnchor="end" fontSize={9} fill="var(--text-muted)">{label}</text>
-                            ))}
-                            {grid.map((row, d) => row.map((v, h) => {
-                              const level = v === 0 ? 0 : Math.min(4, Math.ceil((v / maxVal) * 4))
-                              return (
-                                <rect key={`${d}-${h}`} x={leftPad + h * (cellSize + gap)} y={topPad + d * (cellSize + gap)}
-                                  width={cellSize} height={cellSize} rx={2} fill={colors[level]} opacity={0.9}>
-                                  <title>{`${dayLabels[d]} ${h}:00 — ${v} ${t('pixelOffice.heatmap.messages')}`}</title>
-                                </rect>
-                              )
-                            }))}
-                          </svg>
+                          <div className="overflow-x-auto">
+                            <svg width={svgW} height={svgH} className="block min-w-max">
+                              {hourLabels.map(h => (
+                                <text key={h} x={leftPad + h * (cellSize + gap) + cellSize / 2} y={topPad - 6} textAnchor="middle" fontSize={9} fill="var(--text-muted)">{h}</text>
+                              ))}
+                              {dayLabels.map((label, d) => (
+                                <text key={d} x={leftPad - 4} y={topPad + d * (cellSize + gap) + cellSize / 2 + 3} textAnchor="end" fontSize={9} fill="var(--text-muted)">{label}</text>
+                              ))}
+                              {grid.map((row, d) => row.map((v, h) => {
+                                const level = v === 0 ? 0 : Math.min(4, Math.ceil((v / maxVal) * 4))
+                                return (
+                                  <rect key={`${d}-${h}`} x={leftPad + h * (cellSize + gap)} y={topPad + d * (cellSize + gap)}
+                                    width={cellSize} height={cellSize} rx={2} fill={colors[level]} opacity={0.9}>
+                                    <title>{`${dayLabels[d]} ${h}:00 — ${v} ${t('pixelOffice.heatmap.messages')}`}</title>
+                                  </rect>
+                                )
+                              }))}
+                            </svg>
+                          </div>
                         </div>
                       )
                     })}
@@ -1401,8 +1558,8 @@ export default function PixelOfficePage() {
         {showPhonePanel && !isEditMode && (() => {
           const info = versionInfo
           return (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40" onClick={() => setShowPhonePanel(false)}>
-              <div className="w-80 max-h-[80%] overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-4" onClick={e => e.stopPropagation()}>
+            <div className={modalOverlayClass} onClick={() => setShowPhonePanel(false)}>
+              <div className={modalPanelClass("w-80")} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-3">
                   <span className="font-semibold text-[var(--text)]">📱 OpenClaw Latest</span>
                   <button onClick={() => setShowPhonePanel(false)} className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none">×</button>
@@ -1441,8 +1598,8 @@ export default function PixelOfficePage() {
               })
             : null
           return (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40" onClick={() => setShowIdleRank(false)}>
-              <div className="w-80 max-h-[80%] overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-2xl p-4" onClick={e => e.stopPropagation()}>
+            <div className={modalOverlayClass} onClick={() => setShowIdleRank(false)}>
+              <div className={modalPanelClass("w-80")} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between mb-3">
                   <span className="font-semibold text-[var(--text)]">🛋️ {t('pixelOffice.idleRank.title')}</span>
                   <button onClick={() => setShowIdleRank(false)} className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none">×</button>

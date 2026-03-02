@@ -39,6 +39,8 @@ export function Sidebar() {
   const pathname = usePathname();
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileAgentCount, setMobileAgentCount] = useState<number | null>(null);
   const [experimentOpen, setExperimentOpen] = useState(false);
   const [bugsEnabled, setBugsEnabled] = useState(false);
   const [bugsCount, setBugsCount] = useState(5);
@@ -187,11 +189,182 @@ export function Sidebar() {
 
   const logoTransform = `translate(${manualLogoOffset.dx + logoCarry.dx}px, ${manualLogoOffset.dy + logoCarry.dy}px) rotate(${logoCarry.angle + manualLogoAngle}rad)`;
   const logoCursor = !bugsEnabled ? (isLogoDragging ? "grabbing" : "grab") : "default";
+  const mobileCurrent = NAV_ITEMS.flatMap((g) => g.items).find((item) =>
+    item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
+  );
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    let aborted = false;
+    const fetchAgentCount = async () => {
+      try {
+        const res = await fetch("/api/config", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (aborted) return;
+        const count = Array.isArray(data?.agents) ? data.agents.length : 0;
+        setMobileAgentCount(count);
+      } catch {}
+    };
+    if (pathname === "/") {
+      void fetchAgentCount();
+      const timer = setInterval(fetchAgentCount, 30000);
+      return () => {
+        aborted = true;
+        clearInterval(timer);
+      };
+    }
+    return () => {
+      aborted = true;
+    };
+  }, [pathname]);
 
   return (
     <>
+      <div className="md:hidden">
+        <header className="fixed inset-x-0 top-0 z-50 h-14 border-b border-[var(--border)] bg-[var(--card)]/95 backdrop-blur">
+          <div className="h-full px-3 flex items-center justify-between gap-2">
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="w-9 h-9 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] text-base"
+              aria-label="Open menu"
+            >
+              ☰
+            </button>
+            <Link href="/" className="flex items-center gap-2 min-w-0">
+              <span className="text-2xl leading-none">🦞</span>
+              <div className="min-w-0">
+                <div className="text-xs font-bold tracking-wide truncate">OPENCLAW</div>
+                <div className="text-[10px] text-[var(--text-muted)] truncate">
+                  {pathname === "/" && mobileAgentCount !== null
+                    ? `${mobileAgentCount} ${t("home.agentCount")}`
+                    : mobileCurrent ? t(mobileCurrent.labelKey) : "BOT DASHBOARD"}
+                </div>
+              </div>
+            </Link>
+            <div className="flex items-center gap-1">
+              <LanguageSwitcher />
+              <ThemeSwitcher />
+            </div>
+          </div>
+        </header>
+
+        {mobileMenuOpen && (
+          <div className="fixed inset-0 z-[55]">
+            <button
+              className="absolute inset-0 bg-black/45"
+              onClick={() => setMobileMenuOpen(false)}
+              aria-label="Close menu overlay"
+            />
+            <aside className="absolute top-0 left-0 bottom-0 w-[276px] max-w-[86vw] border-r border-[var(--border)] bg-[var(--card)] shadow-2xl flex flex-col">
+              <div className="h-14 px-3 border-b border-[var(--border)] flex items-center justify-between">
+                <div className="font-semibold text-sm">Navigation</div>
+                <button
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-8 h-8 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)]"
+                  aria-label="Close menu"
+                >
+                  ×
+                </button>
+              </div>
+              <nav className="flex-1 overflow-y-auto p-3">
+                <div className="space-y-4">
+                  {NAV_ITEMS.map((group) => (
+                    <div key={group.group}>
+                      <div className="px-1 mb-1 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+                        {t(group.group)}
+                      </div>
+                      <div className="space-y-1">
+                        {group.items.map((item) => {
+                          const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+                          return (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              onClick={() => setMobileMenuOpen(false)}
+                              className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                                active
+                                  ? "bg-[var(--accent)]/15 text-[var(--accent)] font-medium"
+                                  : "text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-[var(--bg)]"
+                              }`}
+                            >
+                              <span className="text-base">{item.icon}</span>
+                              {t(item.labelKey)}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="rounded-xl border border-[var(--border)] bg-[var(--card)]/65 p-2">
+                    <button
+                      onClick={() => setExperimentOpen((v) => !v)}
+                      className={`w-full flex items-center justify-between rounded-lg px-3 py-2 transition-colors ${
+                        experimentOpen
+                          ? "bg-[var(--accent)]/12 text-[var(--accent)] border border-[var(--accent)]/35"
+                          : "bg-[var(--bg)] text-[var(--text)] border border-[var(--border)] hover:bg-[var(--accent)]/8"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="text-sm">🧪</span>
+                        <span className="text-sm font-semibold tracking-wide">{t("nav.experiments")}</span>
+                      </span>
+                      <span
+                        className={`inline-flex items-center justify-center text-base leading-none transition-transform ${
+                          experimentOpen ? "text-[var(--accent)] rotate-180" : "text-[var(--text-muted)]"
+                        }`}
+                      >
+                        ⌄
+                      </span>
+                    </button>
+                    {experimentOpen && (
+                      <div className="mt-2 space-y-2 rounded-lg border border-[var(--border)] bg-[var(--card)] p-2">
+                        <button
+                          onClick={toggleBugs}
+                          className={`w-full px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                            bugsEnabled
+                              ? "bg-[var(--accent)]/10 border-[var(--accent)]/30 text-[var(--accent)]"
+                              : "bg-[var(--card)] border-[var(--border)] text-[var(--text-muted)]"
+                          }`}
+                        >
+                          {bugsEnabled ? `🐛 ${t("nav.bugsOn")}` : `🐛 ${t("nav.bugsOff")}`}
+                        </button>
+                        <label className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs rounded-lg border bg-[var(--card)] border-[var(--border)] text-[var(--text-muted)]">
+                          <span>{t("nav.bugsCount")} {bugsCount}</span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={BUGS_MAX}
+                            step={1}
+                            value={bugsCount}
+                            onChange={(e) => onBugCountChange(Number(e.target.value))}
+                            className="w-24 accent-[var(--accent)]"
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </nav>
+            </aside>
+          </div>
+        )}
+      </div>
+
       <aside
-        className="sidebar"
+        className="sidebar hidden md:flex"
         style={{ width: collapsed ? 64 : 224 }}
       >
         {/* Header: Logo + Toggle */}
@@ -371,7 +544,7 @@ export function Sidebar() {
       </aside>
 
       {/* Spacer */}
-      <div style={{ width: collapsed ? 64 : 224, flexShrink: 0, transition: "width 0.2s" }} />
+      <div className="hidden md:block" style={{ width: collapsed ? 64 : 224, flexShrink: 0, transition: "width 0.2s" }} />
     </>
   );
 }

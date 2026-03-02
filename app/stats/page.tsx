@@ -256,8 +256,8 @@ function StatsAgentPicker() {
   }
 
   return (
-    <main className="min-h-screen p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <main className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="flex flex-col gap-3 mb-6 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold">📊 {t("stats.title")}</h1>
           <p className="text-[var(--text-muted)] text-sm mt-1">
@@ -365,23 +365,24 @@ function StatsDetail({ agentId }: { agentId: string }) {
   const totalMessages = currentData.reduce((s, d) => s + d.messageCount, 0);
 
   return (
-    <main className="min-h-screen p-8 max-w-6xl mx-auto">
+    <main className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-3 mb-6 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold">{`📊 ${agentId} ${t("stats.title")}`}</h1>
           <p className="text-[var(--text-muted)] text-sm mt-1">
             {t("stats.subtitle")}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           {/* Time range selector */}
-          <div className="flex rounded-lg border border-[var(--border)] overflow-hidden">
+          <div className="max-w-full overflow-x-auto rounded-lg border border-[var(--border)]">
+            <div className="flex min-w-max">
             {(["daily", "weekly", "monthly"] as TimeRange[]).map((r) => (
               <button
                 key={r}
                 onClick={() => setRange(r)}
-                className={`px-4 py-2 text-sm transition ${
+                className={`px-3 py-2 text-xs md:text-sm transition ${
                   range === r
                     ? "bg-[var(--accent)] text-[var(--bg)] font-medium"
                     : "bg-[var(--card)] text-[var(--text-muted)] hover:text-[var(--text)]"
@@ -390,16 +391,17 @@ function StatsDetail({ agentId }: { agentId: string }) {
                 {getRangeLabel(r)}
               </button>
             ))}
+            </div>
           </div>
           <Link
             href={`/sessions?agent=${agentId}`}
-            className="px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm hover:border-[var(--accent)] transition"
+            className="w-full sm:w-auto px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm hover:border-[var(--accent)] transition text-center"
           >
             {t("stats.sessionList")}
           </Link>
           <Link
             href={`/stats`}
-            className="px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm hover:border-[var(--accent)] transition"
+            className="w-full sm:w-auto px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm hover:border-[var(--accent)] transition text-center"
           >
             {t("stats.backToAgents")}
           </Link>
@@ -407,7 +409,7 @@ function StatsDetail({ agentId }: { agentId: string }) {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--card)]">
           <div className="text-xs text-[var(--text-muted)] mb-1">{t("stats.totalInputToken")}</div>
           <div className="text-xl font-bold text-blue-400">{formatTokens(totalInput)}</div>
@@ -428,9 +430,9 @@ function StatsDetail({ agentId }: { agentId: string }) {
 
       {/* Token chart */}
       <div className="p-5 rounded-xl border border-[var(--border)] bg-[var(--card)] mb-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col gap-2 mb-4 md:flex-row md:items-center md:justify-between">
           <h2 className="text-sm font-semibold text-[var(--text)]">{t("stats.tokenConsumption")}</h2>
-          <div className="flex items-center gap-4 text-xs">
+          <div className="flex flex-wrap items-center gap-4 text-xs">
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-blue-500 inline-block" /> Input</span>
             <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block" /> Output</span>
           </div>

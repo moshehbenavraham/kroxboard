@@ -221,8 +221,8 @@ export default function AlertsPage() {
   }
 
   return (
-    <main className="min-h-screen p-8 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
+    <main className="min-h-screen p-4 md:p-8 max-w-4xl mx-auto">
+      <div className="flex flex-col gap-3 mb-6 md:mb-8 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             🔔 {t("alerts.title") || "Alert Center"}
@@ -231,10 +231,10 @@ export default function AlertsPage() {
             {t("alerts.subtitle") || "Configure system alerts and notifications"}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {/* 检查间隔设置 */}
           {config.enabled && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-[var(--text-muted)]">{t("alerts.checkInterval") || "Check Interval"}:</span>
               <select
                 value={checkInterval}

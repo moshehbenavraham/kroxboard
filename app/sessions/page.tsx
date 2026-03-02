@@ -100,8 +100,8 @@ function AgentPicker() {
   }
 
   return (
-    <main className="min-h-screen p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <main className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="flex flex-col gap-3 mb-6 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold">💬 {t("nav.sessions")}</h1>
           <p className="text-[var(--text-muted)] text-sm mt-1">
@@ -262,25 +262,25 @@ function SessionList({ agentId }: { agentId: string }) {
   }
 
   return (
-    <main className="min-h-screen p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <main className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="flex flex-col gap-3 mb-6 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold">📋 {agentId} {t("sessions.title")}</h1>
           <p className="text-[var(--text-muted)] text-sm mt-1">
             {sessions.length} {t("sessions.sessionCount")} · {t("sessions.totalToken")}: {(totalTokens / 1000).toFixed(1)}k
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           <button
             onClick={testAllSessions}
             disabled={testingAll}
-            className="px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 transition disabled:opacity-50"
+            className="w-full sm:w-auto px-4 py-2 rounded-lg bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 transition disabled:opacity-50"
           >
             {testingAll ? t("sessions.testingAll") : t("sessions.testAll")}
           </button>
           <Link
             href="/sessions"
-            className="px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm hover:border-[var(--accent)] transition"
+            className="w-full sm:w-auto px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm hover:border-[var(--accent)] transition text-center"
           >
             {t("sessions.backToAgents")}
           </Link>
@@ -299,20 +299,20 @@ function SessionList({ agentId }: { agentId: string }) {
               title={t("agent.openChat")}
               className="p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] hover:border-[var(--accent)] transition cursor-pointer"
             >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 mb-2 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
                   <span
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${typeInfo.color}`}
                   >
                     {typeInfo.emoji} {typeInfo.label}
                   </span>
                   {s.target && (
-                    <code className="text-xs text-[var(--text-muted)] bg-[var(--bg)] px-2 py-0.5 rounded">
+                    <code className="text-xs text-[var(--text-muted)] bg-[var(--bg)] px-2 py-0.5 rounded truncate max-w-[52vw] md:max-w-none">
                       {s.target}
                     </code>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 md:self-auto self-start">
                   <button
                     onClick={(e) => testSession(s.key, e)}
                     disabled={testResults[s.key]?.status === "testing"}
@@ -337,10 +337,10 @@ function SessionList({ agentId }: { agentId: string }) {
                     <span className="ml-2">{t("sessions.testTime")}: {(testResults[s.key].elapsed! / 1000).toFixed(1)}s</span>
                   )}
                   {testResults[s.key].reply && (
-                    <span className="ml-2 opacity-80">{t("sessions.testReply")}: {testResults[s.key].reply}</span>
+                    <span className="ml-2 opacity-80 break-all">{t("sessions.testReply")}: {testResults[s.key].reply}</span>
                   )}
                   {testResults[s.key].error && (
-                    <span className="ml-2 opacity-80">{testResults[s.key].error}</span>
+                    <span className="ml-2 opacity-80 break-all">{testResults[s.key].error}</span>
                   )}
                 </div>
               )}
@@ -368,8 +368,8 @@ function SessionList({ agentId }: { agentId: string }) {
                   </div>
                 </div>
               )}
-              <div className="flex items-center justify-between text-xs text-[var(--text-muted)]">
-                <span className="font-mono text-[10px] opacity-60">{s.key}</span>
+              <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
+                <span className="font-mono text-[10px] opacity-60 truncate max-w-[56vw] md:max-w-none">{s.key}</span>
                 <span>{formatTime(s.updatedAt)}</span>
               </div>
             </div>

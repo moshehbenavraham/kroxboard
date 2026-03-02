@@ -79,15 +79,15 @@ export default function SkillsPage() {
   const customCount = skills.filter((s) => s.source === "custom").length;
 
   return (
-    <main className="min-h-screen p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <main className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="flex flex-col gap-3 mb-6 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold">{t("skills.title")}</h1>
           <p className="text-[var(--text-muted)] text-sm mt-1">
             共 {skills.length} {t("skills.count")}（{t("skills.builtin")} {builtinCount} / {t("skills.extension")} {extCount} / {t("skills.custom")} {customCount}）
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Link
             href="/"
             className="px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm font-medium hover:border-[var(--accent)] transition"
@@ -98,8 +98,8 @@ export default function SkillsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="flex rounded-lg border border-[var(--border)] overflow-hidden">
+      <div className="flex flex-col gap-3 mb-6 md:flex-row md:items-center">
+        <div className="flex flex-wrap rounded-lg border border-[var(--border)] overflow-hidden">
           {(["all", "builtin", "extension", "custom"] as const).map((f) => (
             <button
               key={f}
@@ -119,7 +119,7 @@ export default function SkillsPage() {
           placeholder={t("skills.search")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm outline-none focus:border-[var(--accent)] transition w-64"
+          className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-sm outline-none focus:border-[var(--accent)] transition w-full md:w-64"
         />
         <span className="text-xs text-[var(--text-muted)]">
           {t("skills.showing")} {filtered.length} {t("skills.unit")}

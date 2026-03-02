@@ -19,7 +19,13 @@ interface HealthResult {
   webUrl?: string;
 }
 
-export function GatewayStatus() {
+interface GatewayStatusProps {
+  compact?: boolean;
+  className?: string;
+  hideIconOnMobile?: boolean;
+}
+
+export function GatewayStatus({ compact = false, className = "", hideIconOnMobile = false }: GatewayStatusProps) {
   const { t } = useI18n();
   const [health, setHealth] = useState<HealthResult | null>(null);
   const [showError, setShowError] = useState(false);
@@ -38,27 +44,34 @@ export function GatewayStatus() {
   }, [check]);
 
   return (
-    <div className="relative inline-flex items-center gap-2">
+    <div className={`relative inline-flex items-center gap-1.5 ${className}`.trim()}>
       <a
         href={health?.ok && health.webUrl ? resolveGatewayUrl(health.webUrl) : undefined}
         target="_blank"
         rel="noopener noreferrer"
-        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border hover:bg-cyan-500/30 transition-colors cursor-pointer ${
+        className={`inline-flex items-center rounded-full font-medium border hover:bg-cyan-500/30 transition-colors cursor-pointer ${
+          compact ? "px-2 py-1 text-[10px]" : "px-2 py-0.5 text-xs"
+        } ${
           health?.ok
             ? "bg-cyan-500/25 text-cyan-200 border-cyan-400/45 animate-pulse"
             : "bg-cyan-500/20 text-cyan-300 border-cyan-500/30"
         }`}
       >
-        🦞 Gateway
+        {compact ? "GW" : hideIconOnMobile ? (
+          <>
+            <span className="md:hidden">Gateway</span>
+            <span className="hidden md:inline">🦞 Gateway</span>
+          </>
+        ) : "🦞 Gateway"}
         <span className="opacity-50 text-[10px]">↗</span>
       </a>
       {!health ? (
-        <span className="text-xs text-[var(--text-muted)]">--</span>
+        <span className={compact ? "text-[10px] text-[var(--text-muted)]" : "text-xs text-[var(--text-muted)]"}>--</span>
       ) : health.ok ? (
-        <span className="text-green-400 text-sm cursor-help" title={t("gateway.healthy")}>✅</span>
+        <span className={compact ? "text-green-400 text-xs cursor-help" : "text-green-400 text-sm cursor-help"} title={t("gateway.healthy")}>✅</span>
       ) : (
         <span
-          className="text-red-400 text-sm cursor-pointer"
+          className={compact ? "text-red-400 text-xs cursor-pointer" : "text-red-400 text-sm cursor-pointer"}
           title={health.error || t("gateway.unhealthy")}
           onClick={() => setShowError((v) => !v)}
         >❌</span>

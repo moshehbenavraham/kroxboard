@@ -357,7 +357,7 @@ function ModelBadge({ model, accessMode }: { model: string; accessMode?: "auth" 
         colors[provider] || "bg-gray-500/20 text-gray-300 border-gray-500/30"
       }`}
     >
-      🧠 {modelName}{accessMode ? ` (${accessMode})` : ""}
+      {modelName}{accessMode ? ` (${accessMode})` : ""}
     </span>
   );
 }
@@ -921,10 +921,10 @@ export default function Home() {
     providerAccessModeMap[p.id] = p.accessMode;
   }
   return (
-    <div className="p-3 max-w-6xl mx-auto">
+    <div className="p-3 md:p-4 max-w-6xl mx-auto">
       {/* 头部 */}
-      <div className="flex items-center justify-between mb-2 gap-2">
-        <div>
+      <div className="flex flex-col gap-2 mb-3 md:flex-row md:items-center md:justify-between">
+        <div className="hidden md:block">
           <h1 className="text-xl font-bold flex items-center gap-2">
             🤖 {t("home.pageTitle")}
           </h1>
@@ -932,44 +932,46 @@ export default function Home() {
             {t("models.totalPrefix")} {data.agents.length} {t("home.agentCount")} · {t("home.defaultModel")}: {data.defaults.model}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 max-w-full">
           <button
             onClick={testAllAgents}
             disabled={testing}
-            className="px-4 py-2 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-sm font-medium hover:opacity-90 transition disabled:opacity-50 cursor-pointer"
+            className="shrink-0 px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-[var(--text)] text-sm font-medium hover:border-[var(--accent)] transition disabled:opacity-50 cursor-pointer"
           >
             {testing ? t("home.testingAll") : t("home.testAll")}
           </button>
           <button
             onClick={testAllPlatforms}
             disabled={testingPlatforms}
-            className="px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-[var(--text)] text-sm font-medium hover:border-[var(--accent)] transition disabled:opacity-50 cursor-pointer"
+            className="shrink-0 px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-[var(--text)] text-sm font-medium hover:border-[var(--accent)] transition disabled:opacity-50 cursor-pointer"
           >
             {testingPlatforms ? t("home.testingPlatforms") : t("home.testPlatforms")}
           </button>
           <button
             onClick={testAllSessions}
             disabled={testingSessions}
-            className="px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-[var(--text)] text-sm font-medium hover:border-[var(--accent)] transition disabled:opacity-50 cursor-pointer"
+            className="shrink-0 px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-[var(--text)] text-sm font-medium hover:border-[var(--accent)] transition disabled:opacity-50 cursor-pointer"
           >
             {testingSessions ? t("home.testingSessions") : t("home.testSessions")}
           </button>
           <button
             onClick={testAllDmSessions}
             disabled={testingDmSessions}
-            className="px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-[var(--text)] text-sm font-medium hover:border-[var(--accent)] transition disabled:opacity-50 cursor-pointer"
+            className="shrink-0 px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-[var(--text)] text-sm font-medium hover:border-[var(--accent)] transition disabled:opacity-50 cursor-pointer"
           >
             {testingDmSessions ? t("home.testingDmSessions") : t("home.testDmSessions")}
           </button>
         </div>
       </div>
-      <div className="flex items-center justify-between mb-2">
-        <GatewayStatus />
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="shrink-0">
+          <GatewayStatus hideIconOnMobile />
+        </div>
+        <div className="flex items-center gap-2 min-w-0 max-w-full overflow-x-auto pb-1 md:overflow-visible md:pb-0">
           <select
             value={refreshInterval}
             onChange={(e) => setRefreshInterval(Number(e.target.value))}
-            className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm text-[var(--text)] cursor-pointer hover:border-[var(--accent)] transition"
+            className="shrink-0 px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm text-[var(--text)] cursor-pointer hover:border-[var(--accent)] transition"
           >
             {REFRESH_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -981,13 +983,13 @@ export default function Home() {
             <button
               onClick={() => fetchData(false)}
               disabled={loading}
-              className="px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm hover:border-[var(--accent)] transition disabled:opacity-50"
+              className="shrink-0 px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm hover:border-[var(--accent)] transition disabled:opacity-50"
             >
               {loading ? "⏳" : "🔄"}
             </button>
           )}
           {lastUpdated && (
-            <span className="text-xs text-[var(--text-muted)]">
+            <span className="shrink-0 text-xs text-[var(--text-muted)] whitespace-nowrap">
               {t("home.updatedAt")} {lastUpdated}
             </span>
           )}
@@ -1004,7 +1006,7 @@ export default function Home() {
       {/* 汇总统计趋势 */}
       {allStats && (
         <div className="mt-8 p-5 rounded-xl border border-[var(--border)] bg-[var(--card)]">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col gap-2 mb-4 md:flex-row md:items-center md:justify-between">
             <h2 className="text-sm font-semibold text-[var(--text)]">{t("home.globalTrend")}</h2>
             <div className="flex rounded-lg border border-[var(--border)] overflow-hidden">
               {(Object.keys(RANGE_LABELS) as TimeRange[]).map((r) => (
@@ -1021,7 +1023,7 @@ export default function Home() {
             const totalMsgs = currentData.reduce((s, d) => s + d.messageCount, 0);
             return (
               <>
-                <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                   <div className="p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)]">
                     <div className="text-[10px] text-[var(--text-muted)]">{t("home.totalInputToken")}</div>
                     <div className="text-lg font-bold text-blue-400">{formatTokens(totalInput)}</div>

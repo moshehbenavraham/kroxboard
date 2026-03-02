@@ -203,8 +203,8 @@ export default function ModelsPage() {
   }
 
   return (
-    <main className="min-h-screen p-8 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
+    <main className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="flex flex-col gap-3 mb-6 md:mb-8 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             {t("models.title")}
@@ -213,7 +213,7 @@ export default function ModelsPage() {
             {t("models.totalPrefix")} {data.providers.length} {t("models.providerCount")}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={testAllModels}
             disabled={Object.values(testing).some(Boolean)}
@@ -260,7 +260,7 @@ export default function ModelsPage() {
             key={provider.id}
             className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5"
           >
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <h2 className="text-lg font-semibold">{provider.id}</h2>
                 <span className="text-xs text-[var(--text-muted)]">
@@ -280,10 +280,84 @@ export default function ModelsPage() {
             </div>
 
             {provider.models.length > 0 ? (
-              <div className="overflow-x-auto">
+              <div>
                 {(() => {
                   const hasDetail = provider.models.some((m: any) => m.contextWindow || m.maxTokens);
                   return (
+                <>
+                <div className="md:hidden space-y-2">
+                  {provider.models.map((m) => {
+                    const stat = modelStats[`${provider.id}/${m.id}`];
+                    const testKey = `${provider.id}/${m.id}`;
+                    const isTesting = testing[testKey];
+                    const result = testResults[testKey];
+                    return (
+                      <div key={m.id} className="rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-mono text-xs text-[var(--accent)] truncate">{m.id}</div>
+                            <div className="text-sm text-[var(--text)] truncate">{m.name || "-"}</div>
+                          </div>
+                          <span className="shrink-0 px-1.5 py-0.5 rounded bg-[var(--card)] text-[10px] border border-[var(--border)]">
+                            {provider.accessMode === "auth" ? t("models.accessModeAuth") : t("models.accessModeApiKey")}
+                          </span>
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                          <div className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1">
+                            <div className="text-[var(--text-muted)]">{t("models.colInputToken")}</div>
+                            <div className="text-blue-400 font-mono">{stat ? formatTokens(stat.inputTokens) : "-"}</div>
+                          </div>
+                          <div className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1">
+                            <div className="text-[var(--text-muted)]">{t("models.colOutputToken")}</div>
+                            <div className="text-emerald-400 font-mono">{stat ? formatTokens(stat.outputTokens) : "-"}</div>
+                          </div>
+                          <div className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1">
+                            <div className="text-[var(--text-muted)]">{t("models.colAvgResponse")}</div>
+                            <div className="text-amber-400 font-mono">{stat ? formatMs(stat.avgResponseMs) : "-"}</div>
+                          </div>
+                          {hasDetail && (
+                            <div className="rounded border border-[var(--border)] bg-[var(--card)] px-2 py-1">
+                              <div className="text-[var(--text-muted)]">{t("models.colContext")}</div>
+                              <div className="text-[var(--text)] font-mono">{formatNum(m.contextWindow || 0)}</div>
+                            </div>
+                          )}
+                        </div>
+                        {hasDetail && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {(m.input || []).map((inputType) => (
+                              <span key={inputType} className="px-1.5 py-0.5 rounded bg-[var(--card)] text-[10px]">
+                                {inputType === "text" ? "📝" : "🖼️"} {inputType}
+                              </span>
+                            ))}
+                            <span className="px-1.5 py-0.5 rounded bg-[var(--card)] text-[10px]">
+                              {t("models.colReasoning")}: {m.reasoning ? "✅" : "❌"}
+                            </span>
+                          </div>
+                        )}
+                        <div className="mt-2 flex items-center justify-between gap-2">
+                          <button
+                            onClick={() => testModel(provider.id, m.id)}
+                            disabled={isTesting}
+                            className={`px-3 py-1.5 rounded text-xs font-medium transition ${
+                              isTesting
+                                ? "bg-gray-500/20 text-gray-400 cursor-wait"
+                                : "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent)]/40 cursor-pointer"
+                            }`}
+                          >
+                            {isTesting ? t("common.testing") : t("common.test")}
+                          </button>
+                          {result && (
+                            <span className={`text-[10px] ${result.ok ? "text-green-400" : "text-red-400"} truncate max-w-[56vw]`} title={result.ok ? result.text : result.error}>
+                              {result.ok ? `✅ ${formatMs(result.elapsed)}` : `❌ ${result.error?.slice(0, 42)}`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-[var(--text-muted)] text-xs border-b border-[var(--border)]">
@@ -358,7 +432,9 @@ export default function ModelsPage() {
                     })}
                   </tbody>
                 </table>
-                  );
+                </div>
+                </>
+                  )
                 })()}
               </div>
             ) : (
