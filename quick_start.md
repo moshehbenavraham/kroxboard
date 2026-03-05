@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-## 通过skill安装
+## 3.通过skill安装
 ```
 npx clawhub install openclaw-bot-dashboard
 或者：npx skills add xmanrui/openclaw-bot-dashboard
