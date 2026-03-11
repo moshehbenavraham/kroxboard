@@ -206,7 +206,7 @@ function ResponseTrendChart({ data, height = 180, t }: { data: DayStat[]; height
 }
 
 export default function Home() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [data, setData] = useState<ConfigData | null>(cachedHomeData);
   const [error, setError] = useState<string | null>(cachedHomeError);
   const [refreshInterval, setRefreshInterval] = useState(cachedHomeRefreshInterval);
@@ -660,7 +660,7 @@ export default function Home() {
       {/* Agent 任務追蹤 */}
       {agentActivity && agentActivity.some(a => a.state !== "offline") && (
         <div className="mt-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)]">
-          <h2 className="text-sm font-semibold text-[var(--text-muted)] mb-3">📋 Agent 任務追蹤</h2>
+          <h2 className="text-sm font-semibold text-[var(--text-muted)] mb-3">📋 {t("home.agentTaskTracking")}</h2>
           <div className="space-y-2">
             {agentActivity
               .filter(a => a.state !== "offline")
@@ -675,7 +675,11 @@ export default function Home() {
                         agent.state === "waiting" ? "bg-amber-500/20 text-amber-400" :
                         "bg-[var(--border)] text-[var(--text-muted)]"
                       }`}>
-                        {agent.state === "working" ? "執行中" : agent.state === "waiting" ? "等待中" : "閒置"}
+                        {agent.state === "working"
+                          ? t("home.agentTaskState.working")
+                          : agent.state === "waiting"
+                            ? t("home.agentTaskState.waiting")
+                            : t("home.agentTaskState.idle")}
                       </span>
                     </div>
                     {agent.subagents && agent.subagents.length > 0 ? (
@@ -691,11 +695,11 @@ export default function Home() {
                         ))}
                       </div>
                     ) : (
-                      <div className="text-xs text-[var(--text-muted)] opacity-60">無進行中的子任務</div>
+                      <div className="text-xs text-[var(--text-muted)] opacity-60">{t("home.agentTaskNoSubtasks")}</div>
                     )}
                   </div>
                   <div className="text-[10px] text-[var(--text-muted)] whitespace-nowrap">
-                    {agent.lastActive ? new Date(agent.lastActive).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" }) : ""}
+                    {agent.lastActive ? new Date(agent.lastActive).toLocaleTimeString(locale === "zh" ? "zh-CN" : locale, { hour: "2-digit", minute: "2-digit" }) : ""}
                   </div>
                 </div>
               ))}

@@ -90,6 +90,11 @@ const translations: Record<Locale, Record<string, string>> = {
     "home.testingSessions": "測試中...",
     "home.testDmSessions": "測試 DM Session",
     "home.testingDmSessions": "測試中...",
+    "home.agentTaskTracking": "Agent 任務追蹤",
+    "home.agentTaskState.working": "執行中",
+    "home.agentTaskState.waiting": "等待中",
+    "home.agentTaskState.idle": "閒置",
+    "home.agentTaskNoSubtasks": "無進行中的子任務",
 
     // agent card
     "agent.model": "模型",
@@ -357,6 +362,11 @@ const translations: Record<Locale, Record<string, string>> = {
     "home.testingSessions": "测试中...",
     "home.testDmSessions": "测试 DM Session",
     "home.testingDmSessions": "测试中...",
+    "home.agentTaskTracking": "Agent 任务追踪",
+    "home.agentTaskState.working": "执行中",
+    "home.agentTaskState.waiting": "等待中",
+    "home.agentTaskState.idle": "闲置",
+    "home.agentTaskNoSubtasks": "无进行中的子任务",
 
     // agent card
     "agent.model": "模型",
@@ -624,6 +634,11 @@ const translations: Record<Locale, Record<string, string>> = {
     "home.testingSessions": "Testing...",
     "home.testDmSessions": "Test DM Sessions",
     "home.testingDmSessions": "Testing...",
+    "home.agentTaskTracking": "Agent Task Tracking",
+    "home.agentTaskState.working": "Running",
+    "home.agentTaskState.waiting": "Waiting",
+    "home.agentTaskState.idle": "Idle",
+    "home.agentTaskNoSubtasks": "No active subtasks",
 
     // agent card
     "agent.model": "Model",
