@@ -83,14 +83,14 @@ Verification and regression coverage.
 
 Before marking session complete:
 
-- [ ] All tasks marked `[x]`
-- [ ] All tests passing
-- [ ] All files ASCII-encoded
-- [ ] implementation-notes.md updated
-- [ ] Ready for the validate workflow step
+- [x] All tasks marked `[x]`
+- [x] All tests passing
+- [x] All files ASCII-encoded
+- [x] implementation-notes.md updated
+- [x] Ready for the validate workflow step
 
 ---
 
 ## Next Steps
 
-Run the implement workflow step to begin AI-led implementation.
+Session complete. Run `updateprd` to sync tracking state and prepare the next session.

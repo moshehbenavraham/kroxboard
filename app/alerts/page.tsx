@@ -73,10 +73,10 @@ export default function AlertsPage() {
 		hour1: "1 hour",
 		hours2: "2 hours",
 		hours5: "5 hours",
-		checking: "⏳ Checking...",
-		checkNow: "🔄 Check Now",
-		alertsTriggered: "⚠️ Alerts Triggered",
-		checkingAlerts: "⏳ Checking alerts...",
+		checking: "... Checking...",
+		checkNow: "Refresh Check Now",
+		alertsTriggered: "WARN Alerts Triggered",
+		checkingAlerts: "... Checking alerts...",
 		timeout: "Timeout (s):",
 		failureRate: "Failure rate (%):",
 		maxFailures: "Max failures:",
@@ -330,7 +330,7 @@ export default function AlertsPage() {
 			<div className="flex flex-col gap-3 mb-6 md:mb-8 md:flex-row md:items-center md:justify-between">
 				<div>
 					<h1 className="text-2xl font-bold flex items-center gap-2">
-						🔔 {t("alerts.title") || "Alert Center"}
+						[Bell] {t("alerts.title") || "Alert Center"}
 					</h1>
 					<p className="text-[var(--text-muted)] text-sm mt-1">
 						{t("alerts.subtitle") ||
@@ -399,7 +399,7 @@ export default function AlertsPage() {
 					<ul className="space-y-1">
 						{checkResults.map((result) => (
 							<li key={result} className="text-sm text-yellow-300">
-								• {result}
+								- {result}
 							</li>
 						))}
 					</ul>
@@ -592,7 +592,7 @@ export default function AlertsPage() {
 			{/* Saved notice */}
 			{saved && (
 				<div className="fixed bottom-8 right-8 px-4 py-2 rounded-lg bg-green-500 text-white text-sm animate-fade-in">
-					✓ {ui.saved}
+					OK {ui.saved}
 				</div>
 			)}
 		</main>

@@ -926,7 +926,7 @@ export default function PixelOfficePage() {
 		};
 	}, [hoveredAgentId, agents, isMobileViewport]);
 
-	// Load GitHub contribution heatmap data (real → fallback mock)
+	// Load GitHub contribution heatmap data (real -> fallback mock)
 	useEffect(() => {
 		// Seed mock data first so the panel is never empty.
 		const mockWeeks = Array.from({ length: 52 }, () => ({
@@ -1130,7 +1130,7 @@ export default function PixelOfficePage() {
 					configMap.set(agent.id, {
 						id: agent.id,
 						name: agent.name || agent.id,
-						emoji: agent.emoji || "🤖",
+						emoji: agent.emoji || "Bot",
 						model: agent.model || "",
 						platforms: Array.isArray(agent.platforms) ? agent.platforms : [],
 						session: agent.session || undefined,
@@ -1227,7 +1227,7 @@ export default function PixelOfficePage() {
 		if (ch) ch.label = t("pixelOffice.gatewaySre.name");
 	}, [officeReady, t]);
 
-	// ── Editor helpers ──────────────────────────────────────────
+	// -- Editor helpers ------------------------------------------
 	const applyEdit = useCallback(
 		(newLayout: OfficeLayout) => {
 			const office = officeRef.current;
@@ -1316,7 +1316,7 @@ export default function PixelOfficePage() {
 		forceEditorUpdate();
 	}, [forceEditorUpdate]);
 
-	// ── Mouse events ──────────────────────────────────────────
+	// -- Mouse events ------------------------------------------
 	const handleMouseMove = (e: React.MouseEvent) => {
 		if (!canvasRef.current || !officeRef.current) return;
 		const office = officeRef.current;
@@ -1637,7 +1637,7 @@ export default function PixelOfficePage() {
 						);
 					})
 				) {
-					// Click on PC — open gateway chat for main agent
+					// Click on PC - open gateway chat for main agent
 					const gw = gatewayRef.current;
 					const sessionKey = "agent:main:main";
 					let chatUrl = buildGatewayUrl(
@@ -1667,7 +1667,7 @@ export default function PixelOfficePage() {
 						);
 					})
 				) {
-					// Click on right bookshelf — show model panel
+					// Click on right bookshelf - show model panel
 					modelPanelOpenedAtRef.current = performance.now();
 					setShowModelPanel(true);
 				} else if (
@@ -1683,7 +1683,7 @@ export default function PixelOfficePage() {
 						);
 					})
 				) {
-					// Click on right whiteboard — show token ranking
+					// Click on right whiteboard - show token ranking
 					tokenRankOpenedAtRef.current = performance.now();
 					setShowTokenRank(true);
 				} else if (
@@ -1699,7 +1699,7 @@ export default function PixelOfficePage() {
 						);
 					})
 				) {
-					// Click on clock — show activity heatmap
+					// Click on clock - show activity heatmap
 					setShowActivityHeatmap(true);
 					if (!activityHeatmapRef.current) {
 						fetch("/api/activity-heatmap")
@@ -1722,7 +1722,7 @@ export default function PixelOfficePage() {
 						);
 					})
 				) {
-					// Click on phone — show version info
+					// Click on phone - show version info
 					setShowPhonePanel(true);
 					void fetchVersionInfo(true);
 				} else if (
@@ -1738,10 +1738,10 @@ export default function PixelOfficePage() {
 						);
 					})
 				) {
-					// Click on sofa — show idle rank
+					// Click on sofa - show idle rank
 					setShowIdleRank(true);
 				} else if (clickedServer) {
-					// Click on server rack — show tooltip and refresh latest status
+					// Click on server rack - show tooltip and refresh latest status
 					setServerTooltip({ open: true, x: clickX, y: clickY });
 					void refreshGatewayHealthSnapshot();
 				} else if (
@@ -1751,7 +1751,7 @@ export default function PixelOfficePage() {
 					tileY >= -0.5 &&
 					tileY < 1
 				) {
-					// Click on wall photograph — fullscreen view
+					// Click on wall photograph - fullscreen view
 					fullscreenPhotoOpenedAtRef.current = performance.now();
 					setFullscreenPhoto(true);
 				} else if (
@@ -1762,13 +1762,13 @@ export default function PixelOfficePage() {
 					tileY >= -0.5 &&
 					tileY < 1
 				) {
-					// Click on GitHub contribution heatmap — open profile
+					// Click on GitHub contribution heatmap - open profile
 					window.open(
 						`https://github.com/${contributionsRef.current.username}`,
 						"_blank",
 					);
 				} else if (office.getFirstLobsterAt(worldX, worldY) !== null) {
-					// Click on first lobster — toggle rage mode
+					// Click on first lobster - toggle rage mode
 					office.toggleFirstLobsterRage();
 				} else {
 					// Check character click
@@ -2065,7 +2065,7 @@ export default function PixelOfficePage() {
 		handleMouseUp();
 	};
 
-	// ── Keyboard events ──────────────────────────────────────────
+	// -- Keyboard events ------------------------------------------
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			const editor = editorRef.current;
@@ -2174,7 +2174,7 @@ export default function PixelOfficePage() {
 		subagentCreatorInfo,
 	]);
 
-	// ── Editor toolbar callbacks ──────────────────────────────────
+	// -- Editor toolbar callbacks ----------------------------------
 	const handleToolChange = useCallback(
 		(tool: EditTool) => {
 			editorRef.current.activeTool = tool;
@@ -2262,7 +2262,7 @@ export default function PixelOfficePage() {
 		panRef.current = { x: 0, y: 0 };
 	}, [isMobileViewport]);
 
-	// ── Hovered agent tooltip data ──────────────────────────────
+	// -- Hovered agent tooltip data ------------------------------
 	const getHoveredAgentInfo = useCallback(() => {
 		if (hoveredAgentId === null) return null;
 		const map = agentIdMapRef.current;
@@ -2369,7 +2369,7 @@ export default function PixelOfficePage() {
 			: "";
 		const chipTooltip = isTempWorker
 			? `${tempWorkerOwner} ${t("pixelOffice.tempWorker.createdBy")}`
-			: `agent id：${agent.agentId}`;
+			: `agent id:${agent.agentId}`;
 		const chipToneClass = isTempWorker
 			? "bg-red-900/45 border-red-700/80 text-red-100 animate-pulse"
 			: agent.state === "working"
@@ -2521,7 +2521,7 @@ export default function PixelOfficePage() {
 									: "bg-[var(--card)] border-[var(--border)] text-[var(--text-muted)]"
 							}`}
 						>
-							{soundOn ? "🔔" : "🔕"} {t("pixelOffice.sound")}
+							{soundOn ? "[Bell]" : "[Muted]"} {t("pixelOffice.sound")}
 						</button>
 						{soundOn && (
 							<button
@@ -2529,7 +2529,7 @@ export default function PixelOfficePage() {
 								className="px-3 py-1.5 text-xs rounded-lg border transition-colors bg-[var(--card)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--accent)]"
 								title="Next track"
 							>
-								⏭
+								{">>"}
 							</button>
 						)}
 						<button
@@ -2635,7 +2635,7 @@ export default function PixelOfficePage() {
 					className="absolute top-3 right-3 px-2 py-1.5 text-xs rounded-lg border bg-[var(--card)]/80 border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text)] hover:border-[var(--accent)] transition-colors backdrop-blur-sm"
 					title={t("pixelOffice.resetView")}
 				>
-					⊡
+					[ ]
 				</button>
 
 				{/* Agent hover tooltip */}
@@ -2656,7 +2656,7 @@ export default function PixelOfficePage() {
 							{hoveredInfo.kind === "gatewaySre" ? (
 								<>
 									<div className="flex items-center gap-1.5 mb-1.5">
-										<span>🧯</span>
+										<span>FireExt</span>
 										<span className="font-semibold text-[var(--text)]">
 											{t("pixelOffice.gatewaySre.name")}
 										</span>
@@ -2782,10 +2782,10 @@ export default function PixelOfficePage() {
 									aria-label={t("common.close")}
 									title={t("common.close")}
 								>
-									×
+									x
 								</button>
 								<div className="flex items-center gap-1.5 mb-1.5">
-									<span>🖥️</span>
+									<span>Screen</span>
 									<span className="font-semibold text-[var(--text)]">
 										Gateway Server
 									</span>
@@ -2832,7 +2832,7 @@ export default function PixelOfficePage() {
 						const cardAgent: AgentCardAgent = {
 							id: selectedAgentId,
 							name: configAgent?.name || runtimeAgent?.name || selectedAgentId,
-							emoji: configAgent?.emoji || runtimeAgent?.emoji || "🤖",
+							emoji: configAgent?.emoji || runtimeAgent?.emoji || "Bot",
 							model: configAgent?.model || "",
 							platforms: configAgent?.platforms || [],
 							session: stats
@@ -2870,7 +2870,7 @@ export default function PixelOfficePage() {
 											onClick={() => setSelectedAgentId(null)}
 											className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none"
 										>
-											×
+											x
 										</button>
 									</div>
 									<AgentCard
@@ -2920,10 +2920,10 @@ export default function PixelOfficePage() {
 									aria-label={t("common.close")}
 									title={t("common.close")}
 								>
-									×
+									x
 								</button>
 								<div className="flex items-center gap-1.5 mb-1.5">
-									<span>🧑‍🔧</span>
+									<span>Tech</span>
 									<span className="font-semibold text-[var(--text)]">
 										{t("pixelOffice.tempWorker.source")}
 									</span>
@@ -2957,13 +2957,13 @@ export default function PixelOfficePage() {
 						>
 							<div className="flex items-center justify-between mb-3">
 								<span className="font-semibold text-[var(--text)]">
-									📚 {t("models.title")}
+									Books {t("models.title")}
 								</span>
 								<button
 									onClick={() => setShowModelPanel(false)}
 									className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none"
 								>
-									×
+									x
 								</button>
 							</div>
 							{providersRef.current.length === 0 ? (
@@ -3002,7 +3002,7 @@ export default function PixelOfficePage() {
 														className="flex items-center justify-between text-xs"
 													>
 														<span className="text-[var(--text)] truncate mr-2">
-															🧠 {model.name || model.id}
+															Brain {model.name || model.id}
 														</span>
 														{model.contextWindow && (
 															<span className="text-[var(--text-muted)] whitespace-nowrap">
@@ -3051,13 +3051,13 @@ export default function PixelOfficePage() {
 								>
 									<div className="flex items-center justify-between mb-3">
 										<span className="font-semibold text-[var(--text)]">
-											📊 {t("agent.tokenUsage")}
+											Chart {t("agent.tokenUsage")}
 										</span>
 										<button
 											onClick={() => setShowTokenRank(false)}
 											className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none"
 										>
-											×
+											x
 										</button>
 									</div>
 									{ranked.length === 0 ? (
@@ -3133,13 +3133,13 @@ export default function PixelOfficePage() {
 								>
 									<div className="flex items-center justify-between mb-3">
 										<span className="font-semibold text-[var(--text)]">
-											🕐 {t("pixelOffice.heatmap.title")}
+											Time {t("pixelOffice.heatmap.title")}
 										</span>
 										<button
 											onClick={() => setShowActivityHeatmap(false)}
 											className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none"
 										>
-											×
+											x
 										</button>
 									</div>
 									{!agentGrids ? (
@@ -3160,7 +3160,7 @@ export default function PixelOfficePage() {
 												return (
 													<div key={agentId}>
 														<div className="flex items-center gap-1.5 mb-1.5">
-															<span>{agent?.emoji || "🤖"}</span>
+															<span>{agent?.emoji || "Bot"}</span>
 															<span className="text-xs font-semibold text-[var(--text)]">
 																{agent?.name || agentId}
 															</span>
@@ -3224,7 +3224,7 @@ export default function PixelOfficePage() {
 																				fill={colors[level]}
 																				opacity={0.9}
 																			>
-																				<title>{`${dayLabels[d]} ${h}:00 — ${v} ${t("pixelOffice.heatmap.messages")}`}</title>
+																				<title>{`${dayLabels[d]} ${h}:00 - ${v} ${t("pixelOffice.heatmap.messages")}`}</title>
 																			</rect>
 																		);
 																	}),
@@ -3241,7 +3241,7 @@ export default function PixelOfficePage() {
 						);
 					})()}
 
-				{/* Phone panel — version info */}
+				{/* Phone panel - version info */}
 				{showPhonePanel &&
 					!isEditMode &&
 					(() => {
@@ -3257,13 +3257,13 @@ export default function PixelOfficePage() {
 								>
 									<div className="flex items-center justify-between mb-3">
 										<span className="font-semibold text-[var(--text)]">
-											📱 OpenClaw Latest
+											Phone OpenClaw Latest
 										</span>
 										<button
 											onClick={() => setShowPhonePanel(false)}
 											className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none"
 										>
-											×
+											x
 										</button>
 									</div>
 									{!info && versionLoading ? (
@@ -3297,7 +3297,7 @@ export default function PixelOfficePage() {
 												rel="noopener noreferrer"
 												className="block text-center text-xs text-[var(--accent)] hover:underline"
 											>
-												View on GitHub →
+												{"View on GitHub ->"}
 											</a>
 										</div>
 									)}
@@ -3318,7 +3318,7 @@ export default function PixelOfficePage() {
 										const agent = agents.find((a) => a.agentId === r.agentId);
 										return {
 											...r,
-											emoji: agent?.emoji || "🤖",
+											emoji: agent?.emoji || "Bot",
 											name: agent?.name || r.agentId,
 										};
 									})
@@ -3334,13 +3334,13 @@ export default function PixelOfficePage() {
 								>
 									<div className="flex items-center justify-between mb-3">
 										<span className="font-semibold text-[var(--text)]">
-											🛋️ {t("pixelOffice.idleRank.title")}
+											Sofa {t("pixelOffice.idleRank.title")}
 										</span>
 										<button
 											onClick={() => setShowIdleRank(false)}
 											className="text-[var(--text-muted)] hover:text-[var(--text)] text-lg leading-none"
 										>
-											×
+											x
 										</button>
 									</div>
 									{!ranked || ranked.length === 0 ? (
@@ -3358,11 +3358,11 @@ export default function PixelOfficePage() {
 															: "#f87171";
 												const medal =
 													i === 0
-														? "🥇"
+														? "1st"
 														: i === 1
-															? "🥈"
+															? "2nd"
 															: i === 2
-																? "🥉"
+																? "3rd"
 																: `${i + 1}.`;
 												return (
 													<div key={a.agentId}>
@@ -3442,7 +3442,7 @@ export default function PixelOfficePage() {
 							onClick={() => setFullscreenPhoto(false)}
 							className="absolute top-4 right-4 text-white/70 hover:text-white text-2xl leading-none"
 						>
-							×
+							x
 						</button>
 					</div>
 				)}

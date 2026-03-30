@@ -160,7 +160,7 @@ function getFeishuDmUser(agentId: string): string | null {
 	}
 }
 
-// Feishu: get token → verify bot info → send a real DM
+// Feishu: get token -> verify bot info -> send a real DM
 async function testFeishu(
 	agentId: string,
 	accountId: string,
@@ -247,7 +247,7 @@ async function testFeishu(
 					receive_id: testUserId,
 					msg_type: "text",
 					content: JSON.stringify({
-						text: `[Platform Test] ${botName} connectivity test ✅ (${now})`,
+						text: `[Platform Test] ${botName} connectivity test OK (${now})`,
 					}),
 				}),
 				signal: AbortSignal.timeout(15000),
@@ -263,7 +263,7 @@ async function testFeishu(
 				platform: "feishu",
 				accountId,
 				ok: true,
-				detail: `${botName} → DM sent (${elapsed}ms)`,
+				detail: `${botName} -> DM sent (${elapsed}ms)`,
 				elapsed,
 			};
 		} else {
@@ -360,7 +360,7 @@ async function testDiscord(
 					"Content-Type: application/json",
 				],
 				body: JSON.stringify({
-					content: `[Platform Test] ${botName} connectivity test ✅ (${now})`,
+					content: `[Platform Test] ${botName} connectivity test OK (${now})`,
 					flags: 4096,
 				}),
 				timeoutSec: 15,
@@ -375,7 +375,7 @@ async function testDiscord(
 				agentId,
 				platform: "discord",
 				ok: true,
-				detail: `${botName} → DM sent (${elapsed}ms, via ${sourceLabel})`,
+				detail: `${botName} -> DM sent (${elapsed}ms, via ${sourceLabel})`,
 				elapsed,
 			};
 		}
@@ -691,7 +691,7 @@ async function testTelegram(
 		const result = runOpenClawMessageSend(
 			"telegram",
 			testChatId,
-			`[Platform Test] Telegram connectivity test ✅ (${now})`,
+			`[Platform Test] Telegram connectivity test OK (${now})`,
 			["--silent"],
 		);
 		const elapsed = Date.now() - startTime;
@@ -700,7 +700,7 @@ async function testTelegram(
 			agentId,
 			platform: "telegram",
 			ok: true,
-			detail: `Telegram → DM sent to ${testChatId} (${elapsed}ms)${outputSummary ? ` · ${outputSummary}` : ""}`,
+			detail: `Telegram -> DM sent to ${testChatId} (${elapsed}ms)${outputSummary ? ` | ${outputSummary}` : ""}`,
 			elapsed,
 		};
 	} catch (err: any) {
@@ -833,7 +833,7 @@ async function testYuanbao(
 		const sendResult = await sendYuanbaoMessage({
 			account,
 			toAccount: testUserId,
-			text: `[Platform Test] Yuanbao connectivity test ✅ (${now})`,
+			text: `[Platform Test] Yuanbao connectivity test OK (${now})`,
 			fromAccount: account.botId,
 			ctx: {
 				account,
@@ -868,7 +868,7 @@ async function testYuanbao(
 			platform: "yuanbao",
 			accountId,
 			ok: true,
-			detail: `Yuanbao → real IM sent to ${testUserId} (${elapsed}ms, via ${sourceLabel})${sendResult?.messageId ? ` · msgId=${sendResult.messageId}` : ""}`,
+			detail: `Yuanbao -> real IM sent to ${testUserId} (${elapsed}ms, via ${sourceLabel})${sendResult?.messageId ? ` | msgId=${sendResult.messageId}` : ""}`,
 			elapsed,
 		};
 	} catch (err: any) {
@@ -911,7 +911,7 @@ async function testGenericChannel(
 		const result = runOpenClawMessageSend(
 			channel,
 			testUserId,
-			`[Platform Test] ${displayName} connectivity test ✅ (${now})`,
+			`[Platform Test] ${displayName} connectivity test OK (${now})`,
 			["--silent"],
 		);
 		const elapsed = Date.now() - startTime;
@@ -922,7 +922,7 @@ async function testGenericChannel(
 			agentId,
 			platform: channel,
 			ok: true,
-			detail: `${displayName} → DM sent to ${testUserId} (${elapsed}ms, via ${sourceLabel})${outputSummary ? ` · ${outputSummary}` : ""}`,
+			detail: `${displayName} -> DM sent to ${testUserId} (${elapsed}ms, via ${sourceLabel})${outputSummary ? ` | ${outputSummary}` : ""}`,
 			elapsed,
 		};
 	} catch (err: any) {
@@ -1173,7 +1173,7 @@ async function testWhatsapp(
 		const result = runOpenClawMessageSend(
 			"whatsapp",
 			testUserId,
-			`[Platform Test] WhatsApp connectivity test ✅ (${now})`,
+			`[Platform Test] WhatsApp connectivity test OK (${now})`,
 		);
 
 		const elapsed = Date.now() - startTime;
@@ -1184,7 +1184,7 @@ async function testWhatsapp(
 			agentId,
 			platform: "whatsapp",
 			ok: true,
-			detail: `WhatsApp → DM sent to ${testUserId} (${elapsed}ms, via ${sourceLabel})${outputSummary ? ` · ${outputSummary}` : ""}`,
+			detail: `WhatsApp -> DM sent to ${testUserId} (${elapsed}ms, via ${sourceLabel})${outputSummary ? ` | ${outputSummary}` : ""}`,
 			elapsed,
 		};
 	} catch (err: any) {
@@ -1269,9 +1269,9 @@ async function testQqbot(
 
 		const body =
 			kind === "channel"
-				? { content: `[Platform Test] QQBot connectivity test ✅ (${now})` }
+				? { content: `[Platform Test] QQBot connectivity test OK (${now})` }
 				: {
-						content: `[Platform Test] QQBot connectivity test ✅ (${now})`,
+						content: `[Platform Test] QQBot connectivity test OK (${now})`,
 						msg_type: 0,
 					};
 
@@ -1303,7 +1303,7 @@ async function testQqbot(
 			agentId,
 			platform: "qqbot",
 			ok: true,
-			detail: `QQBot → DM sent to ${testUserId} (${elapsed}ms, via ${sourceLabel})`,
+			detail: `QQBot -> DM sent to ${testUserId} (${elapsed}ms, via ${sourceLabel})`,
 			elapsed,
 		};
 	} catch (err: any) {

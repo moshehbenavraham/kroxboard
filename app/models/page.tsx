@@ -285,7 +285,7 @@ export default function ModelsPage() {
 						{t("models.defaultModel")}:
 					</span>
 					<span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-green-500/20 text-green-300 border-green-500/30">
-						🧠 {data.defaults.model}
+						Brain {data.defaults.model}
 					</span>
 				</div>
 				{data.defaults.fallbacks.length > 0 && (
@@ -298,7 +298,7 @@ export default function ModelsPage() {
 								key={i}
 								className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-yellow-500/20 text-yellow-300 border-yellow-500/30"
 							>
-								🔄 {f}
+								Refresh {f}
 							</span>
 						))}
 					</div>
@@ -417,13 +417,13 @@ export default function ModelsPage() {
 																			key={inputType}
 																			className="px-1.5 py-0.5 rounded bg-[var(--card)] text-[10px]"
 																		>
-																			{inputType === "text" ? "📝" : "🖼️"}{" "}
+																			{inputType === "text" ? "Note" : "Image"}{" "}
 																			{inputType}
 																		</span>
 																	))}
 																	<span className="px-1.5 py-0.5 rounded bg-[var(--card)] text-[10px]">
 																		{t("models.colReasoning")}:{" "}
-																		{m.reasoning ? "✅" : "❌"}
+																		{m.reasoning ? "OK" : "X"}
 																	</span>
 																</div>
 															)}
@@ -449,8 +449,8 @@ export default function ModelsPage() {
 																		}
 																	>
 																		{result.ok
-																			? `✅ ${formatMs(result.elapsed)}`
-																			: `❌ ${result.error?.slice(0, 42)}`}
+																			? `OK ${formatMs(result.elapsed)}`
+																			: `X ${result.error?.slice(0, 42)}`}
 																	</span>
 																)}
 															</div>
@@ -546,7 +546,9 @@ export default function ModelsPage() {
 																						key={inputType}
 																						className="px-1.5 py-0.5 rounded bg-[var(--bg)] text-xs"
 																					>
-																						{inputType === "text" ? "📝" : "🖼️"}{" "}
+																						{inputType === "text"
+																							? "Note"
+																							: "Image"}{" "}
 																						{inputType}
 																					</span>
 																				))}
@@ -555,7 +557,7 @@ export default function ModelsPage() {
 																	)}
 																	{hasDetail && (
 																		<td className="py-2 pr-4">
-																			{m.reasoning ? "✅" : "❌"}
+																			{m.reasoning ? "OK" : "X"}
 																		</td>
 																	)}
 																	<td className="py-2 pr-4 text-right text-blue-400 font-mono text-xs">
@@ -598,8 +600,8 @@ export default function ModelsPage() {
 																					}
 																				>
 																					{result.ok
-																						? `✅ ${formatMs(result.elapsed)}`
-																						: `❌ ${result.error?.slice(0, 30)}`}
+																						? `OK ${formatMs(result.elapsed)}`
+																						: `X ${result.error?.slice(0, 30)}`}
 																				</span>
 																			)}
 																		</div>
@@ -674,7 +676,7 @@ export default function ModelsPage() {
 																	: "bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent)]/40 cursor-pointer"
 															}`}
 														>
-															{isTesting ? "⏳" : t("common.test")}
+															{isTesting ? "..." : t("common.test")}
 														</button>
 														{result && (
 															<span
@@ -682,8 +684,8 @@ export default function ModelsPage() {
 																title={result.ok ? result.text : result.error}
 															>
 																{result.ok
-																	? `✅ ${formatMs(result.elapsed)}`
-																	: `❌ ${result.error?.slice(0, 30)}`}
+																	? `OK ${formatMs(result.elapsed)}`
+																	: `X ${result.error?.slice(0, 30)}`}
 															</span>
 														)}
 													</div>

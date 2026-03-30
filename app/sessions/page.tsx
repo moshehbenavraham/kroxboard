@@ -40,39 +40,39 @@ interface GatewayInfo {
 
 const TYPE_EMOJI_COLOR: Record<string, { emoji: string; color: string }> = {
 	main: {
-		emoji: "🏠",
+		emoji: "Home",
 		color: "bg-green-500/20 text-green-300 border-green-500/30",
 	},
 	"feishu-dm": {
-		emoji: "📱",
+		emoji: "Phone",
 		color: "bg-blue-500/20 text-blue-300 border-blue-500/30",
 	},
 	"feishu-group": {
-		emoji: "👥",
+		emoji: "Group",
 		color: "bg-blue-500/20 text-blue-300 border-blue-500/30",
 	},
 	"discord-dm": {
-		emoji: "🎮",
+		emoji: "Gamepad",
 		color: "bg-purple-500/20 text-purple-300 border-purple-500/30",
 	},
 	"discord-channel": {
-		emoji: "📢",
+		emoji: "Broadcast",
 		color: "bg-purple-500/20 text-purple-300 border-purple-500/30",
 	},
 	"whatsapp-dm": {
-		emoji: "💬",
+		emoji: "Chat",
 		color: "bg-green-500/20 text-green-300 border-green-500/30",
 	},
 	"whatsapp-group": {
-		emoji: "👥",
+		emoji: "Group",
 		color: "bg-green-500/20 text-green-300 border-green-500/30",
 	},
 	cron: {
-		emoji: "⏰",
+		emoji: "Clock",
 		color: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
 	},
 	unknown: {
-		emoji: "❓",
+		emoji: "?",
 		color: "bg-gray-500/20 text-gray-300 border-gray-500/30",
 	},
 };
@@ -82,7 +82,7 @@ function formatTime(ts: number): string {
 	return new Date(ts).toLocaleString("zh-CN");
 }
 
-/* ── Agent picker (no ?agent= param) ── */
+/* -- Agent picker (no ?agent= param) -- */
 function AgentPicker() {
 	const [agents, setAgents] = useState<AgentInfo[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -134,7 +134,7 @@ function AgentPicker() {
 		<main className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
 			<div className="flex flex-col gap-3 mb-6 md:flex-row md:items-center md:justify-between">
 				<div>
-					<h1 className="text-2xl font-bold">💬 {t("nav.sessions")}</h1>
+					<h1 className="text-2xl font-bold">Chat {t("nav.sessions")}</h1>
 					<p className="text-[var(--text-muted)] text-sm mt-1">
 						{t("sessions.selectAgent")}
 					</p>
@@ -198,7 +198,7 @@ function AgentPicker() {
 	);
 }
 
-/* ── Session list (with ?agent= param) ── */
+/* -- Session list (with ?agent= param) -- */
 function SessionList({ agentId }: { agentId: string }) {
 	const { runProtectedRequest } = useOperatorElevation();
 	const [sessions, setSessions] = useState<Session[]>([]);
@@ -349,10 +349,10 @@ function SessionList({ agentId }: { agentId: string }) {
 			<div className="flex flex-col gap-3 mb-6 md:flex-row md:items-center md:justify-between">
 				<div>
 					<h1 className="text-2xl font-bold">
-						📋 {agentId} {t("sessions.title")}
+						List {agentId} {t("sessions.title")}
 					</h1>
 					<p className="text-[var(--text-muted)] text-sm mt-1">
-						{sessions.length} {t("sessions.sessionCount")} ·{" "}
+						{sessions.length} {t("sessions.sessionCount")} |{" "}
 						{t("sessions.totalToken")}: {(totalTokens / 1000).toFixed(1)}k
 					</p>
 				</div>
@@ -503,7 +503,7 @@ function SessionList({ agentId }: { agentId: string }) {
 	);
 }
 
-/* ── Page entry ── */
+/* -- Page entry -- */
 function SessionsPageInner() {
 	const searchParams = useSearchParams();
 	const agentId = searchParams.get("agent") || "";

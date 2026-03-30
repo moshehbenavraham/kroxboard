@@ -91,7 +91,7 @@ async function testDmSession(
 							agentId,
 							platform,
 							ok: true,
-							detail: `${fallback.reply || "OK"} · DM fallback`,
+							detail: `${fallback.reply || "OK"} | DM fallback`,
 							elapsed: fallback.elapsed,
 						}
 					: {

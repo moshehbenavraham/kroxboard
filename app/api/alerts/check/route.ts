@@ -245,7 +245,7 @@ async function sendAlertViaFeishu(agentId: string, message: string) {
 					receive_id: testUserId,
 					msg_type: "text",
 					content: JSON.stringify({
-						text: `🔔 Alert Notification\n${message}\n(${now})`,
+						text: `[Bell] Alert Notification\n${message}\n(${now})`,
 					}),
 				}),
 				signal: AbortSignal.timeout(10000),
@@ -268,7 +268,7 @@ async function sendAlertViaFeishu(agentId: string, message: string) {
 						receive_id: testUserId,
 						msg_type: "text",
 						content: JSON.stringify({
-							text: `🔔 Alert Notification\n${message}\n(${now})`,
+							text: `[Bell] Alert Notification\n${message}\n(${now})`,
 						}),
 					}),
 					signal: AbortSignal.timeout(10000),
@@ -319,7 +319,7 @@ async function _sendAlert(agentId: string, message: string) {
 			body: JSON.stringify({
 				session: sessionKey,
 				messages: [
-					{ role: "user", content: `🔔 Alert Notification: ${message}` },
+					{ role: "user", content: `[Bell] Alert Notification: ${message}` },
 				],
 				max_tokens: 64,
 			}),
@@ -377,7 +377,7 @@ async function checkModelAlerts(config: AlertConfig) {
 			const testResult = await testResp.json();
 
 			if (!testResult.ok) {
-				results.push(`🚨 Model ${provider}/${id} is unavailable.`);
+				results.push(`[Alert] Model ${provider}/${id} is unavailable.`);
 
 				const lastAlert =
 					config.lastAlerts?.[`${rule.id}_${provider}_${id}`] || 0;
@@ -394,7 +394,7 @@ async function checkModelAlerts(config: AlertConfig) {
 		} catch (err: unknown) {
 			const message = err instanceof Error ? err.message : String(err);
 			results.push(
-				`🚨 Error while testing model ${provider}/${id}: ${message}`,
+				`[Alert] Error while testing model ${provider}/${id}: ${message}`,
 			);
 		}
 	}
@@ -455,7 +455,9 @@ async function checkBotResponseAlerts(config: AlertConfig) {
 		const thresholdMs = (rule.threshold || 300) * 1000;
 		if (lastActivity > 0 && now - lastActivity > thresholdMs) {
 			const mins = Math.round((now - lastActivity) / 60000);
-			results.push(`⚠️ Agent ${agentId} has not responded for ${mins} minutes.`);
+			results.push(
+				`WARN Agent ${agentId} has not responded for ${mins} minutes.`,
+			);
 
 			const lastAlert = config.lastAlerts?.[`${rule.id}_${agentId}`] || 0;
 			if (now - lastAlert > 60000) {
@@ -495,7 +497,7 @@ async function checkCronAlerts(config: AlertConfig) {
 	const mockCronFailures = Math.floor(Math.random() * 5); // Simulates 0-4 failures.
 
 	if (mockCronFailures >= (rule.threshold || 3)) {
-		results.push(`🚨 Cron failed ${mockCronFailures} times in a row.`);
+		results.push(`[Alert] Cron failed ${mockCronFailures} times in a row.`);
 		const lastAlert = config.lastAlerts?.[rule.id] || 0;
 		const now = Date.now();
 		if (now - lastAlert > 300000) {

@@ -598,7 +598,7 @@ export default function Home() {
 
 	const testAllAgents = useCallback(() => {
 		setTesting(true);
-		// Set all agents to null (testing indicator) so UI shows ⏳
+		// Set all agents to null (testing indicator) so UI shows ...
 		const pending: Record<string, any> = {};
 		if (data) for (const a of data.agents) pending[a.id] = null;
 		setTestResults(pending);
@@ -630,7 +630,7 @@ export default function Home() {
 
 	const testAllPlatforms = useCallback(() => {
 		setTestingPlatforms(true);
-		// Set all agent:platform combos to null (⏳)
+		// Set all agent:platform combos to null (...)
 		const pending: Record<string, any> = {};
 		if (data) {
 			for (const a of data.agents) {
@@ -829,11 +829,11 @@ export default function Home() {
 			<div className="flex flex-col gap-2 mb-3 md:flex-row md:items-center md:justify-between">
 				<div className="hidden md:block">
 					<h1 className="text-xl font-bold flex items-center gap-2">
-						🤖 {t("home.pageTitle")}
+						Bot {t("home.pageTitle")}
 					</h1>
 					<p className="text-[var(--text-muted)] text-xs mt-0.5">
 						{t("models.totalPrefix")} {data.agents.length}{" "}
-						{t("home.agentCount")} · {t("home.defaultModel")}:{" "}
+						{t("home.agentCount")} | {t("home.defaultModel")}:{" "}
 						{data.defaults.model}
 					</p>
 				</div>
@@ -886,7 +886,9 @@ export default function Home() {
 					>
 						{REFRESH_OPTIONS.map((opt) => (
 							<option key={opt.value} value={opt.value}>
-								{opt.value === 0 ? `🔄 ${opt.label}` : `⏱️ ${opt.label}`}
+								{opt.value === 0
+									? `Refresh ${opt.label}`
+									: `Stopwatch ${opt.label}`}
 							</option>
 						))}
 					</select>
@@ -896,7 +898,7 @@ export default function Home() {
 							disabled={loading}
 							className="shrink-0 px-3 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm hover:border-[var(--accent)] transition disabled:opacity-50"
 						>
-							{loading ? "⏳" : "🔄"}
+							{loading ? "..." : "Refresh"}
 						</button>
 					)}
 					{lastUpdated && (
@@ -938,7 +940,7 @@ export default function Home() {
 			{agentActivity?.some((a) => a.state !== "offline") && (
 				<div className="mt-4 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)]">
 					<h2 className="text-sm font-semibold text-[var(--text-muted)] mb-3">
-						📋 {t("home.agentTaskTracking")}
+						List {t("home.agentTaskTracking")}
 					</h2>
 					<div className="space-y-2">
 						{agentActivity
@@ -949,7 +951,7 @@ export default function Home() {
 									className="flex items-start gap-3 p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)]"
 								>
 									<span className="text-lg leading-none mt-0.5">
-										{agent.emoji || "🤖"}
+										{agent.emoji || "Bot"}
 									</span>
 									<div className="flex-1 min-w-0">
 										<div className="flex items-center gap-2 mb-1">
@@ -982,14 +984,16 @@ export default function Home() {
 														key={i}
 														className="text-xs text-[var(--text-muted)]"
 													>
-														<span className="text-[var(--accent)] mr-1">↳</span>
+														<span className="text-[var(--accent)] mr-1">
+															{"->"}
+														</span>
 														<span className="font-medium text-[var(--text)]">
 															{sub.label}
 														</span>
 														{sub.activityEvents &&
 															sub.activityEvents.length > 0 && (
 																<span className="ml-2 opacity-70">
-																	—{" "}
+																	-{" "}
 																	{
 																		sub.activityEvents[
 																			sub.activityEvents.length - 1
@@ -1016,7 +1020,7 @@ export default function Home() {
 														className="text-xs text-[var(--text-muted)]"
 													>
 														<div className="flex items-center gap-2">
-															<span className="text-yellow-400">⏰</span>
+															<span className="text-yellow-400">Clock</span>
 															<span className="font-medium text-[var(--text)]">
 																{cron.label}
 															</span>
@@ -1207,14 +1211,14 @@ export default function Home() {
 								className="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)]"
 							>
 								<span className="text-lg">
-									{group.channel === "feishu" ? "📱" : "🎮"}
+									{group.channel === "feishu" ? "Phone" : "Gamepad"}
 								</span>
 								<div className="flex-1">
 									<div className="text-xs text-[var(--text-muted)] mb-1">
 										{group.channel === "feishu"
 											? t("home.feishuGroup")
 											: t("home.discordChannel")}{" "}
-										· {group.groupId.split(":")[1]}
+										| {group.groupId.split(":")[1]}
 									</div>
 									<div className="flex flex-wrap gap-2">
 										{group.agents.map((a) => (

@@ -3,13 +3,13 @@
 	"project_name": "OpenClaw Dashboard",
 	"description": "A lightweight web dashboard for viewing OpenClaw bots, agents, models, and sessions status at a glance.",
 	"current_phase": 0,
-	"current_session": "phase00-session01-auth-and-operator-elevation-foundation",
+	"current_session": null,
 	"monorepo": false,
 	"phases": {
 		"0": {
 			"name": "Foundation",
 			"description": "Contain immediate exposure, establish secure defaults, and lock in the secure deployment model.",
-			"status": "not_started",
+			"status": "in_progress",
 			"session_count": 3
 		},
 		"1": {
@@ -36,7 +36,7 @@
 		{
 			"date": "2026-03-31",
 			"session": "phase00-session01-auth-and-operator-elevation-foundation",
-			"status": "planned"
+			"status": "completed"
 		}
 	]
 }
