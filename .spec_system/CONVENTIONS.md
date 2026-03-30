@@ -91,7 +91,7 @@ Platform: GitHub Actions
 | Build & Test | configured | .github/workflows/test.yml |
 | Security | configured | .github/workflows/security.yml |
 | Integration | configured | .github/workflows/integration.yml |
-| Operations | not configured | - |
+| Operations | configured | .github/workflows/deploy.yml |
 
 ## Local Dev Tools
 

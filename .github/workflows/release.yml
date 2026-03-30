@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate Release Notes
+        id: generate_notes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: tags } = await github.rest.repos.listTags({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 2
+            });
+
+            let previousTag = '';
+            if (tags.length > 1) {
+              previousTag = tags[1].name;
+            }
+
+            let commitLog = '';
+            if (previousTag) {
+              const { data: compare } = await github.rest.repos.compareCommits({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                base: previousTag,
+                head: context.ref.replace('refs/tags/', '')
+              });
+              
+              commitLog = compare.commits.map(commit => 
+                `- ${commit.commit.message.split('\n')[0]} (${commit.sha.substring(0, 7)})`
+              ).join('\n');
+            } else {
+              commitLog = 'Initial release';
+            }
+
+            core.setOutput('notes', commitLog);
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## Changes in this release
+            
+            ${{ steps.generate_notes.outputs.notes }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
