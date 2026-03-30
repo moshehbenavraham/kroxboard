@@ -88,7 +88,7 @@ Platform: GitHub Actions
 | Bundle | Status | Workflow |
 |--------|--------|----------|
 | Code Quality | configured | .github/workflows/quality.yml |
-| Build & Test | not configured | - |
+| Build & Test | configured | .github/workflows/test.yml |
 | Security | not configured | - |
 | Integration | not configured | - |
 | Operations | not configured | - |
