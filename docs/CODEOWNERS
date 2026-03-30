@@ -1,0 +1,19 @@
+# Code Ownership
+#
+# Default owner for all files.
+* moshehwebservices@live.com
+
+# Security layer
+lib/security/ moshehwebservices@live.com
+middleware.ts moshehwebservices@live.com
+
+# API routes
+app/api/ moshehwebservices@live.com
+
+# Documentation and security docs
+docs/ moshehwebservices@live.com
+.spec_system/ moshehwebservices@live.com
+
+# Deployment and CI
+Dockerfile moshehwebservices@live.com
+.github/ moshehwebservices@live.com

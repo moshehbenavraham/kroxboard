@@ -7,6 +7,7 @@ import {
 	resolveConfigSnapshotHash,
 } from "@/lib/openclaw-cli";
 import { OPENCLAW_AGENTS_DIR } from "@/lib/openclaw-paths";
+import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
 
 const GATEWAY_CALL_TIMEOUT_MS = 15000;
 const GATEWAY_RECOVERY_TIMEOUT_MS = 45000;
@@ -210,6 +211,9 @@ function clearAgentSessionModelState(agentId: string): void {
 }
 
 export async function PATCH(request: Request) {
+	const access = requireSensitiveRouteAccess(request);
+	if (!access.ok) return access.response;
+
 	try {
 		const body = await request.json().catch(() => null);
 		const agentId = String(body?.agentId || "").trim();

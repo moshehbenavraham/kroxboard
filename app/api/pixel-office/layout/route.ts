@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { OPENCLAW_PIXEL_OFFICE_DIR } from "@/lib/openclaw-paths";
+import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
 
 const LAYOUT_DIR = OPENCLAW_PIXEL_OFFICE_DIR;
 const LAYOUT_FILE = path.join(LAYOUT_DIR, "layout.json");
@@ -20,6 +21,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+	const access = requireSensitiveRouteAccess(request);
+	if (!access.ok) return access.response;
+
 	try {
 		const { layout } = await request.json();
 		if (!layout || layout.version !== 1 || !Array.isArray(layout.tiles)) {

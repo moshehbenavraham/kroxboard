@@ -3,6 +3,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
 import { shouldHidePlatformChannel } from "@/lib/platforms";
+import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
 import {
 	parseApiJsonSafely,
 	shouldFallbackToCli,
@@ -129,7 +130,10 @@ async function testDmSession(
 	}
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+	const access = requireSensitiveRouteAccess(request);
+	if (!access.ok) return access.response;
+
 	try {
 		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
 		const config = JSON.parse(raw);
@@ -206,6 +210,6 @@ export async function POST() {
 	}
 }
 
-export async function GET() {
-	return POST();
+export async function GET(request: Request) {
+	return POST(request);
 }

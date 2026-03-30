@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
 import { buildGatewayUrl } from "@/lib/gateway-url";
 import { useI18n } from "@/lib/i18n";
+import { getProtectedRequestError } from "@/lib/operator-elevation-client";
 import {
 	type AgentActivity,
 	syncAgentsToOffice,
@@ -288,6 +290,7 @@ let cachedPrevAgentStates = new Map<string, string>();
 
 export default function PixelOfficePage() {
 	const { t, locale } = useI18n();
+	const { runProtectedRequest } = useOperatorElevation();
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const officeRef = useRef<OfficeState | null>(null);
@@ -368,6 +371,9 @@ export default function PixelOfficePage() {
 		string,
 		PlatformTestResult | null
 	> | null>(null);
+	const [layoutSaveMessage, setLayoutSaveMessage] = useState<string | null>(
+		null,
+	);
 	const selectedAgentOpenedAtRef = useRef(0);
 	const tokenRankOpenedAtRef = useRef(0);
 	const modelPanelOpenedAtRef = useRef(0);
@@ -1268,18 +1274,34 @@ export default function PixelOfficePage() {
 		const editor = editorRef.current;
 		if (!office) return;
 		try {
-			await fetch("/api/pixel-office/layout", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ layout: office.layout }),
+			const result = await runProtectedRequest<{
+				success?: boolean;
+				error?: string;
+			}>({
+				actionId: "pixel-office:save-layout",
+				request: () =>
+					fetch("/api/pixel-office/layout", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ layout: office.layout }),
+					}),
 			});
+			if (!result.ok) {
+				throw new Error(getProtectedRequestError(result));
+			}
+			if (!result.data.success) {
+				throw new Error(result.data.error || "Failed to save layout");
+			}
 			savedLayoutRef.current = office.layout;
 			editor.isDirty = false;
+			setLayoutSaveMessage(null);
 			forceEditorUpdate();
-		} catch (e) {
-			console.error("Failed to save layout:", e);
+		} catch (error: unknown) {
+			const message =
+				error instanceof Error ? error.message : "Failed to save layout";
+			setLayoutSaveMessage(message);
 		}
-	}, [forceEditorUpdate]);
+	}, [forceEditorUpdate, runProtectedRequest]);
 
 	const handleReset = useCallback(() => {
 		const office = officeRef.current;
@@ -3391,6 +3413,12 @@ export default function PixelOfficePage() {
 							</div>
 						);
 					})()}
+
+				{layoutSaveMessage && (
+					<div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-200 shadow-lg">
+						{layoutSaveMessage}
+					</div>
+				)}
 
 				{/* Fullscreen photograph viewer */}
 				{fullscreenPhoto && photographRef.current && (

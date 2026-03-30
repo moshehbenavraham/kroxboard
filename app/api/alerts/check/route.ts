@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
 
 const ALERTS_CONFIG_PATH = path.join(OPENCLAW_HOME, "alerts.json");
 const CRON_RULE_ID = "cron_continuous_failure";
@@ -511,7 +512,10 @@ async function checkCronAlerts(config: AlertConfig) {
 	return results;
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+	const access = requireSensitiveRouteAccess(request);
+	if (!access.ok) return access.response;
+
 	try {
 		const config = getAlertConfig();
 

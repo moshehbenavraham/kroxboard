@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
 import { useI18n } from "@/lib/i18n";
+import { getProtectedRequestError } from "@/lib/operator-elevation-client";
 
 interface Model {
 	id: string;
@@ -64,13 +66,35 @@ function formatMs(ms: number): string {
 
 export default function ModelsPage() {
 	const { t } = useI18n();
+	const { runProtectedRequest } = useOperatorElevation();
 	const [data, setData] = useState<ConfigData | null>(null);
 	const [modelStats, setModelStats] = useState<Record<string, ModelStat>>({});
 	const [error, setError] = useState<string | null>(null);
+	const [operatorMessage, setOperatorMessage] = useState<string | null>(null);
 	const [testing, setTesting] = useState<Record<string, boolean>>({});
 	const [testResults, setTestResults] = useState<Record<string, TestResult>>(
 		{},
 	);
+
+	const runModelTest = async (
+		providerId: string,
+		modelId: string,
+	): Promise<TestResult> => {
+		const key = `${providerId}/${modelId}`;
+		const result = await runProtectedRequest<TestResult>({
+			actionId: `test-model:${key}`,
+			request: () =>
+				fetch("/api/test-model", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ provider: providerId, modelId }),
+				}),
+		});
+		if (!result.ok) {
+			throw new Error(getProtectedRequestError(result));
+		}
+		return result.data;
+	};
 
 	const testModel = async (providerId: string, modelId: string) => {
 		const key = `${providerId}/${modelId}`;
@@ -81,17 +105,16 @@ export default function ModelsPage() {
 			return n;
 		});
 		try {
-			const resp = await fetch("/api/test-model", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ provider: providerId, modelId }),
-			});
-			const result = await resp.json();
+			const result = await runModelTest(providerId, modelId);
+			setOperatorMessage(null);
 			setTestResults((prev) => ({ ...prev, [key]: result }));
-		} catch (err: any) {
+		} catch (err: unknown) {
+			const message =
+				err instanceof Error ? err.message : "Protected model test failed";
+			setOperatorMessage(message);
 			setTestResults((prev) => ({
 				...prev,
-				[key]: { ok: false, error: err.message, elapsed: 0 },
+				[key]: { ok: false, error: message, elapsed: 0 },
 			}));
 		} finally {
 			setTesting((prev) => ({ ...prev, [key]: false }));
@@ -142,17 +165,16 @@ export default function ModelsPage() {
 		await Promise.all(
 			modelTargets.map(async ({ providerId, modelId, key }) => {
 				try {
-					const resp = await fetch("/api/test-model", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ provider: providerId, modelId }),
-					});
-					const result = await resp.json();
+					const result = await runModelTest(providerId, modelId);
+					setOperatorMessage(null);
 					setTestResults((prev) => ({ ...prev, [key]: result }));
-				} catch (err: any) {
+				} catch (err: unknown) {
+					const message =
+						err instanceof Error ? err.message : "Protected model test failed";
+					setOperatorMessage(message);
 					setTestResults((prev) => ({
 						...prev,
-						[key]: { ok: false, error: err.message, elapsed: 0 },
+						[key]: { ok: false, error: message, elapsed: 0 },
 					}));
 				} finally {
 					setTesting((prev) => ({ ...prev, [key]: false }));
@@ -250,6 +272,11 @@ export default function ModelsPage() {
 					</Link>
 				</div>
 			</div>
+			{operatorMessage && (
+				<div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+					{operatorMessage}
+				</div>
+			)}
 
 			{/* Primary and fallback models */}
 			<div className="mb-6 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] flex flex-wrap items-center gap-4">

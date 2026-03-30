@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { NextResponse } from "next/server";
 import { OPENCLAW_CONFIG_PATH } from "@/lib/openclaw-paths";
+import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
 import {
 	parseApiJsonSafely,
 	shouldFallbackToCli,
@@ -10,6 +11,9 @@ import {
 const CONFIG_PATH = OPENCLAW_CONFIG_PATH;
 
 export async function POST(req: Request) {
+	const access = requireSensitiveRouteAccess(req);
+	if (!access.ok) return access.response;
+
 	try {
 		const { sessionKey, agentId } = await req.json();
 		if (!sessionKey || !agentId) {

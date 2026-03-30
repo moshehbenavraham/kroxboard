@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
 import { useI18n } from "@/lib/i18n";
+import { getProtectedRequestError } from "@/lib/operator-elevation-client";
 import {
 	AgentCard,
 	type AgentModelOptionGroup,
@@ -374,8 +376,10 @@ function ResponseTrendChart({
 
 export default function Home() {
 	const { t, locale } = useI18n();
+	const { runProtectedRequest } = useOperatorElevation();
 	const [data, setData] = useState<ConfigData | null>(cachedHomeData);
 	const [error, setError] = useState<string | null>(cachedHomeError);
+	const [operatorMessage, setOperatorMessage] = useState<string | null>(null);
 	const [refreshInterval, setRefreshInterval] = useState(
 		cachedHomeRefreshInterval,
 	);
@@ -426,36 +430,23 @@ export default function Home() {
 		{ label: t("refresh.10m"), value: 600 },
 	];
 
-	const parseApiPayload = useCallback(async (resp: Response) => {
-		const raw = await resp.text();
-		let parsed: any = null;
-		try {
-			parsed = JSON.parse(raw);
-		} catch {}
-		const errorText = parsed?.error || raw || `HTTP ${resp.status}`;
-		return { ok: resp.ok, status: resp.status, data: parsed, errorText };
-	}, []);
-
 	const callTestApi = useCallback(
-		async (url: string) => {
-			const requestWithMethod = async (method: "POST" | "GET") => {
-				const resp = await fetch(url, { method, cache: "no-store" });
-				return parseApiPayload(resp);
-			};
-
-			const first = await requestWithMethod("POST");
-			if (first.ok) return first.data;
-
-			const methodIssue =
-				first.status === 405 ||
-				/method not allowed/i.test(first.errorText || "");
-			if (!methodIssue) throw new Error(first.errorText);
-
-			const fallback = await requestWithMethod("GET");
-			if (fallback.ok) return fallback.data;
-			throw new Error(fallback.errorText || first.errorText);
+		async (url: string, actionId: string) => {
+			const result = await runProtectedRequest<any>({
+				actionId,
+				request: () =>
+					fetch(url, {
+						method: "POST",
+						cache: "no-store",
+					}),
+			});
+			if (!result.ok) {
+				throw new Error(getProtectedRequestError(result));
+			}
+			setOperatorMessage(null);
+			return result.data;
 		},
-		[parseApiPayload],
+		[runProtectedRequest],
 	);
 
 	const fetchData = useCallback((silent = false) => {
@@ -493,18 +484,33 @@ export default function Home() {
 
 	const changeAgentModel = useCallback(
 		async (agentId: string, model: string) => {
-			const resp = await fetch("/api/config/agent-model", {
-				method: "PATCH",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ agentId, model }),
+			const result = await runProtectedRequest<{
+				ok: boolean;
+				error?: string;
+			}>({
+				actionId: `change-agent-model:${agentId}`,
+				request: () =>
+					fetch("/api/config/agent-model", {
+						method: "PATCH",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ agentId, model }),
+					}),
 			});
-			const payload = await parseApiPayload(resp);
-			if (!payload.ok) {
-				throw new Error(payload.errorText || t("agent.modelApplyFailed"));
+			if (!result.ok) {
+				const message =
+					getProtectedRequestError(result) || t("agent.modelApplyFailed");
+				setOperatorMessage(message);
+				throw new Error(message);
 			}
+			if (!result.data.ok) {
+				const message = result.data.error || t("agent.modelApplyFailed");
+				setOperatorMessage(message);
+				throw new Error(message);
+			}
+			setOperatorMessage(null);
 			fetchData(true);
 		},
-		[fetchData, parseApiPayload, t],
+		[fetchData, runProtectedRequest, t],
 	);
 
 	// Initial load: restore saved test state from localStorage.
@@ -596,7 +602,7 @@ export default function Home() {
 		const pending: Record<string, any> = {};
 		if (data) for (const a of data.agents) pending[a.id] = null;
 		setTestResults(pending);
-		callTestApi("/api/test-bound-models")
+		callTestApi("/api/test-bound-models", "test-bound-models")
 			.then((resp) => {
 				if (resp.results) {
 					const map: Record<
@@ -609,6 +615,7 @@ export default function Home() {
 			})
 			.catch((e) => {
 				const msg = e instanceof Error ? e.message : "Request failed";
+				setOperatorMessage(msg);
 				const failed: Record<
 					string,
 					{ ok: boolean; error: string; elapsed: number }
@@ -633,7 +640,7 @@ export default function Home() {
 			}
 		}
 		setPlatformTestResults(pending);
-		callTestApi("/api/test-platforms")
+		callTestApi("/api/test-platforms", "test-platforms")
 			.then((resp) => {
 				if (resp.results) {
 					const map: Record<string, PlatformTestResult> = {};
@@ -643,6 +650,7 @@ export default function Home() {
 			})
 			.catch((e) => {
 				const msg = e instanceof Error ? e.message : "Request failed";
+				setOperatorMessage(msg);
 				const failed: Record<string, PlatformTestResult> = {};
 				if (data) {
 					for (const a of data.agents) {
@@ -665,7 +673,7 @@ export default function Home() {
 		const pending: Record<string, any> = {};
 		if (data) for (const a of data.agents) pending[a.id] = null;
 		setSessionTestResults(pending);
-		callTestApi("/api/test-sessions")
+		callTestApi("/api/test-sessions", "test-sessions")
 			.then((resp) => {
 				if (resp.results) {
 					const map: Record<
@@ -678,6 +686,7 @@ export default function Home() {
 			})
 			.catch((e) => {
 				const msg = e instanceof Error ? e.message : "Request failed";
+				setOperatorMessage(msg);
 				const failed: Record<
 					string,
 					{ ok: boolean; error: string; elapsed: number }
@@ -701,7 +710,7 @@ export default function Home() {
 			}
 		}
 		setDmSessionResults(pending);
-		callTestApi("/api/test-dm-sessions")
+		callTestApi("/api/test-dm-sessions", "test-dm-sessions")
 			.then((resp) => {
 				if (resp.results) {
 					const map: Record<string, PlatformTestResult> = {};
@@ -711,6 +720,7 @@ export default function Home() {
 			})
 			.catch((e) => {
 				const msg = e instanceof Error ? e.message : "Request failed";
+				setOperatorMessage(msg);
 				const failed: Record<string, PlatformTestResult> = {};
 				if (data) {
 					for (const a of data.agents) {
@@ -896,6 +906,11 @@ export default function Home() {
 					)}
 				</div>
 			</div>
+			{operatorMessage && (
+				<div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+					{operatorMessage}
+				</div>
+			)}
 
 			{/* Agent cards */}
 			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
 import {
 	parseApiJsonSafely,
 	shouldFallbackToCli,
@@ -15,7 +16,10 @@ function hasEmbeddedHttpError(reply: string): boolean {
 	return /\bHTTP\s*(4\d{2}|5\d{2})\b/i.test(reply);
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+	const access = requireSensitiveRouteAccess(request);
+	if (!access.ok) return access.response;
+
 	try {
 		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
 		const config = JSON.parse(raw);
@@ -120,6 +124,6 @@ export async function POST() {
 	}
 }
 
-export async function GET() {
-	return POST();
+export async function GET(request: Request) {
+	return POST(request);
 }

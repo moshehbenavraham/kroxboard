@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { NextResponse } from "next/server";
 import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
 import { shouldHidePlatformChannel } from "@/lib/platforms";
+import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
 
 const CONFIG_PATH = OPENCLAW_CONFIG_PATH;
 const QQBOT_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";
@@ -1316,7 +1317,10 @@ async function testQqbot(
 	}
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+	const access = requireSensitiveRouteAccess(request);
+	if (!access.ok) return access.response;
+
 	try {
 		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
 		const config = JSON.parse(raw);
@@ -1547,6 +1551,6 @@ export async function POST() {
 	}
 }
 
-export async function GET() {
-	return POST();
+export async function GET(request: Request) {
+	return POST(request);
 }

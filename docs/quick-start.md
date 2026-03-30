@@ -1,32 +1,12 @@
 # Quick Start
 
-## 1. Install via Prompt
-
-```
-In OpenClaw, send the prompt below and let OpenClaw set it up:
-Please help me install and run this GitHub project, and send me the service URL: https://github.com/xmanrui/OpenClaw-bot-review
-```
-
-## 2. Install via Git
-
 ```bash
-git clone https://github.com/xmanrui/OpenClaw-bot-review.git
-cd OpenClaw-bot-review
+cp .env.example .env
+# Edit .env with your operator code and cookie secret
 npm install
 npm run dev
 ```
 
-## 3. Install via Skill
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-```bash
-npx clawhub install openclaw-bot-dashboard
-# or:
-npx skills add xmanrui/openclaw-bot-dashboard
-```
-
-After installation, use these trigger phrases to start the service:
-
-- "open openclaw dashboard"
-- "open OpenClaw-bot-review"
-- "launch bot review"
-- "start dashboard"
+For full setup details see [Onboarding](onboarding.md). For deployment, see [Deployment](deployment.md).

@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { DEFAULT_MODEL_PROBE_TIMEOUT_MS, probeModel } from "@/lib/model-probe";
+import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
 
 const PROBE_TIMEOUT_MS = DEFAULT_MODEL_PROBE_TIMEOUT_MS;
 
 export async function POST(req: Request) {
+	const access = requireSensitiveRouteAccess(req);
+	if (!access.ok) return access.response;
+
 	try {
 		const { provider: providerIdRaw, modelId: modelIdRaw } = await req.json();
 		const providerId = String(providerIdRaw || "").trim();

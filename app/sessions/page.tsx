@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
+import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
 import { buildGatewayUrl } from "@/lib/gateway-url";
 import { useI18n } from "@/lib/i18n";
+import { getProtectedRequestError } from "@/lib/operator-elevation-client";
 
 interface AgentInfo {
 	id: string;
@@ -198,9 +200,11 @@ function AgentPicker() {
 
 /* ── Session list (with ?agent= param) ── */
 function SessionList({ agentId }: { agentId: string }) {
+	const { runProtectedRequest } = useOperatorElevation();
 	const [sessions, setSessions] = useState<Session[]>([]);
 	const [gateway, setGateway] = useState<GatewayInfo>({ port: 18789 });
 	const [error, setError] = useState<string | null>(null);
+	const [operatorMessage, setOperatorMessage] = useState<string | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [testResults, setTestResults] = useState<
 		Record<
@@ -297,23 +301,39 @@ function SessionList({ agentId }: { agentId: string }) {
 			[sessionKey]: { status: "testing" },
 		}));
 		try {
-			const res = await fetch("/api/test-session", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					sessionKey,
-					agentId,
-					port: gateway.port,
-					token: gateway.token,
-				}),
+			const result = await runProtectedRequest<{
+				status: string;
+				elapsed?: number;
+				reply?: string;
+				error?: string;
+			}>({
+				actionId: `test-session:${sessionKey}`,
+				request: () =>
+					fetch("/api/test-session", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({
+							sessionKey,
+							agentId,
+							port: gateway.port,
+							token: gateway.token,
+						}),
+					}),
 			});
-			const data = await res.json();
+			if (!result.ok) {
+				throw new Error(getProtectedRequestError(result));
+			}
+			setOperatorMessage(null);
+			const data = result.data;
 			setTestResults((prev) => ({ ...prev, [sessionKey]: data }));
 			return data;
-		} catch (err: any) {
-			const result = { status: "error", error: err.message };
-			setTestResults((prev) => ({ ...prev, [sessionKey]: result }));
-			return result;
+		} catch (err: unknown) {
+			const message =
+				err instanceof Error ? err.message : "Protected session test failed";
+			setOperatorMessage(message);
+			const failedResult = { status: "error", error: message };
+			setTestResults((prev) => ({ ...prev, [sessionKey]: failedResult }));
+			return failedResult;
 		}
 	}
 
@@ -352,6 +372,11 @@ function SessionList({ agentId }: { agentId: string }) {
 					</Link>
 				</div>
 			</div>
+			{operatorMessage && (
+				<div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+					{operatorMessage}
+				</div>
+			)}
 
 			<div className="space-y-3">
 				{sessions.map((s) => {

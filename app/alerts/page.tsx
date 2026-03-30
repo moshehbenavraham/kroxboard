@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
 import { useI18n } from "@/lib/i18n";
+import {
+	getProtectedRequestError,
+	parseProtectedResponse,
+} from "@/lib/operator-elevation-client";
 
 interface AlertRule {
 	id: string;
@@ -39,15 +44,18 @@ const RULE_DESCRIPTIONS: Record<string, string> = {
 
 export default function AlertsPage() {
 	const { t, locale } = useI18n();
+	const { runProtectedRequest, sessionState } = useOperatorElevation();
 	const [config, setConfig] = useState<AlertConfig | null>(null);
 	const [agents, setAgents] = useState<Agent[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
+	const [operatorMessage, setOperatorMessage] = useState<string | null>(null);
 	const [checking, setChecking] = useState(false);
 	const [checkResults, setCheckResults] = useState<string[]>([]);
 	const [lastCheckTime, setLastCheckTime] = useState<string>("");
 	const [checkInterval, setCheckInterval] = useState(10);
+	const hasElevatedSession = sessionState?.ok === true;
 
 	// Load the configured alert interval.
 	useEffect(() => {
@@ -78,6 +86,38 @@ export default function AlertsPage() {
 		saved: "Saved",
 	};
 
+	const updateAlertConfig = async (
+		body: Record<string, unknown>,
+		actionId: string,
+	): Promise<AlertConfig> => {
+		const result = await runProtectedRequest<AlertConfig>({
+			actionId,
+			request: () =>
+				fetch("/api/alerts", {
+					method: "PUT",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(body),
+				}),
+		});
+		if (!result.ok) {
+			throw new Error(getProtectedRequestError(result));
+		}
+		return result.data;
+	};
+
+	const runManualAlertCheck = async (
+		actionId: string,
+	): Promise<{ results?: string[] }> => {
+		const result = await runProtectedRequest<{ results?: string[] }>({
+			actionId,
+			request: () => fetch("/api/alerts/check", { method: "POST" }),
+		});
+		if (!result.ok) {
+			throw new Error(getProtectedRequestError(result));
+		}
+		return result.data;
+	};
+
 	// Load config and agent data.
 	useEffect(() => {
 		Promise.all([
@@ -94,54 +134,74 @@ export default function AlertsPage() {
 
 	// Schedule alert checks without auto-running one on mount.
 	useEffect(() => {
-		if (!config?.enabled) return;
+		if (!config?.enabled || !hasElevatedSession) return;
 
 		const checkAlerts = () => {
 			setChecking(true);
 			fetch("/api/alerts/check", { method: "POST" })
-				.then((r) => r.json())
-				.then((data) => {
-					if (data.results && data.results.length > 0) {
-						setCheckResults(data.results);
+				.then((response) =>
+					parseProtectedResponse<{ results?: string[] }>(response),
+				)
+				.then((result) => {
+					if (!result.ok) {
+						if ("auth" in result) {
+							setOperatorMessage(result.auth.message);
+							return;
+						}
+						setOperatorMessage(result.error);
+						return;
+					}
+					setOperatorMessage(null);
+					if (result.data.results && result.data.results.length > 0) {
+						setCheckResults(result.data.results);
 						setLastCheckTime(new Date().toLocaleTimeString(timeLocale));
 					}
 				})
-				.catch(console.error)
+				.catch((error: unknown) => {
+					const message =
+						error instanceof Error ? error.message : "Alert check failed";
+					setOperatorMessage(message);
+				})
 				.finally(() => setChecking(false));
 		};
 
 		// Only set the timer here; do not run an immediate check.
 		const timer = setInterval(checkAlerts, checkInterval * 60 * 1000);
 		return () => clearInterval(timer);
-	}, [config?.enabled, checkInterval, timeLocale]);
+	}, [config?.enabled, checkInterval, hasElevatedSession, timeLocale]);
 
 	const handleManualCheck = () => {
 		setChecking(true);
-		fetch("/api/alerts/check", { method: "POST" })
-			.then((r) => r.json())
+		runManualAlertCheck("alerts:manual-check")
 			.then((data) => {
+				setOperatorMessage(null);
 				if (data.results && data.results.length > 0) {
 					setCheckResults(data.results);
 					setLastCheckTime(new Date().toLocaleTimeString(timeLocale));
 				}
 			})
-			.catch(console.error)
+			.catch((error: unknown) => {
+				const message =
+					error instanceof Error ? error.message : "Alert check failed";
+				setOperatorMessage(message);
+			})
 			.finally(() => setChecking(false));
 	};
 
 	const handleToggle = () => {
 		if (!config) return;
 		setSaving(true);
-		fetch("/api/alerts", {
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ enabled: !config.enabled }),
-		})
-			.then((r) => r.json())
+		updateAlertConfig({ enabled: !config.enabled }, "alerts:toggle")
 			.then((newConfig) => {
+				setOperatorMessage(null);
 				setConfig(newConfig);
 				setSaved(true);
 				setTimeout(() => setSaved(false), 2000);
+			})
+			.catch((error: unknown) => {
+				const message =
+					error instanceof Error ? error.message : "Alert update failed";
+				setOperatorMessage(message);
 			})
 			.finally(() => setSaving(false));
 	};
@@ -149,16 +209,20 @@ export default function AlertsPage() {
 	const handleAgentChange = (agentId: string) => {
 		if (!config) return;
 		setSaving(true);
-		fetch("/api/alerts", {
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ receiveAgent: agentId }),
-		})
-			.then((r) => r.json())
+		updateAlertConfig(
+			{ receiveAgent: agentId },
+			`alerts:receive-agent:${agentId}`,
+		)
 			.then((newConfig) => {
+				setOperatorMessage(null);
 				setConfig(newConfig);
 				setSaved(true);
 				setTimeout(() => setSaved(false), 2000);
+			})
+			.catch((error: unknown) => {
+				const message =
+					error instanceof Error ? error.message : "Alert update failed";
+				setOperatorMessage(message);
 			})
 			.finally(() => setSaving(false));
 	};
@@ -167,16 +231,17 @@ export default function AlertsPage() {
 		if (!config) return;
 		setCheckInterval(value);
 		setSaving(true);
-		fetch("/api/alerts", {
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ checkInterval: value }),
-		})
-			.then((r) => r.json())
+		updateAlertConfig({ checkInterval: value }, `alerts:interval:${value}`)
 			.then((newConfig) => {
+				setOperatorMessage(null);
 				setConfig(newConfig);
 				setSaved(true);
 				setTimeout(() => setSaved(false), 2000);
+			})
+			.catch((error: unknown) => {
+				const message =
+					error instanceof Error ? error.message : "Alert update failed";
+				setOperatorMessage(message);
 			})
 			.finally(() => setSaving(false));
 	};
@@ -187,16 +252,17 @@ export default function AlertsPage() {
 			r.id === ruleId ? { ...r, enabled: !r.enabled } : r,
 		);
 		setSaving(true);
-		fetch("/api/alerts", {
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ rules }),
-		})
-			.then((r) => r.json())
+		updateAlertConfig({ rules }, `alerts:rule-toggle:${ruleId}`)
 			.then((newConfig) => {
+				setOperatorMessage(null);
 				setConfig(newConfig);
 				setSaved(true);
 				setTimeout(() => setSaved(false), 2000);
+			})
+			.catch((error: unknown) => {
+				const message =
+					error instanceof Error ? error.message : "Alert update failed";
+				setOperatorMessage(message);
 			})
 			.finally(() => setSaving(false));
 	};
@@ -207,16 +273,38 @@ export default function AlertsPage() {
 			r.id === ruleId ? { ...r, threshold: value } : r,
 		);
 		setSaving(true);
-		fetch("/api/alerts", {
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ rules }),
-		})
-			.then((r) => r.json())
+		updateAlertConfig({ rules }, `alerts:threshold:${ruleId}`)
 			.then((newConfig) => {
+				setOperatorMessage(null);
 				setConfig(newConfig);
 				setSaved(true);
 				setTimeout(() => setSaved(false), 2000);
+			})
+			.catch((error: unknown) => {
+				const message =
+					error instanceof Error ? error.message : "Alert update failed";
+				setOperatorMessage(message);
+			})
+			.finally(() => setSaving(false));
+	};
+
+	const handleTargetAgentsChange = (ruleId: string, targetAgents: string[]) => {
+		if (!config) return;
+		const rules = config.rules.map((rule) =>
+			rule.id === ruleId ? { ...rule, targetAgents } : rule,
+		);
+		setSaving(true);
+		updateAlertConfig({ rules }, `alerts:targets:${ruleId}`)
+			.then((newConfig) => {
+				setOperatorMessage(null);
+				setConfig(newConfig);
+				setSaved(true);
+				setTimeout(() => setSaved(false), 2000);
+			})
+			.catch((error: unknown) => {
+				const message =
+					error instanceof Error ? error.message : "Alert update failed";
+				setOperatorMessage(message);
 			})
 			.finally(() => setSaving(false));
 	};
@@ -289,6 +377,11 @@ export default function AlertsPage() {
 					</Link>
 				</div>
 			</div>
+			{operatorMessage && (
+				<div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+					{operatorMessage}
+				</div>
+			)}
 
 			{/* Check results */}
 			{config.enabled && checkResults.length > 0 && (
@@ -472,25 +565,7 @@ export default function AlertsPage() {
 															newAgents.length === 0 && !rule.targetAgents
 																? agents.map((a) => a.id)
 																: newAgents;
-
-														const rules = config.rules.map((r) =>
-															r.id === rule.id
-																? { ...r, targetAgents: finalAgents }
-																: r,
-														);
-														setSaving(true);
-														fetch("/api/alerts", {
-															method: "PUT",
-															headers: { "Content-Type": "application/json" },
-															body: JSON.stringify({ rules }),
-														})
-															.then((r) => r.json())
-															.then((newConfig) => {
-																setConfig(newConfig);
-																setSaved(true);
-																setTimeout(() => setSaved(false), 2000);
-															})
-															.finally(() => setSaving(false));
+														handleTargetAgentsChange(rule.id, finalAgents);
 													}}
 													disabled={!config.enabled || saving}
 													className={`px-2 py-1 text-xs rounded border transition ${

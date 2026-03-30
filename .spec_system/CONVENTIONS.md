@@ -109,6 +109,20 @@ Platform: GitHub Actions
 | Database | not applicable | filesystem-backed runtime |
 | Observability | Pino | `lib/logger.ts` |
 
+## Infrastructure
+
+| Component | Provider | Details |
+|-----------|----------|---------|
+| CDN/DNS | Cloudflare | `board.aiwithapex.com` |
+| WAF | Cloudflare | OWASP ruleset enabled (manual config) |
+| Hosting | Docker / VPS | Loopback-bound origin |
+| Database | local filesystem | `OPENCLAW_HOME` directory |
+| Health | Next.js API | `/api/health` |
+| Security | Next.js Middleware | Rate limiting (100 req/min) & Security Headers |
+| Backup | Local / R2 | `scripts/backup.sh` (tar of OPENCLAW_HOME, 7-day retention) |
+| Deploy | GitHub Actions | Webhook trigger on push to main |
+| Local Dev | `npm run dev` | Verified responding |
+
 ## Security Toggles
 
 - Every sensitive feature flag must be documented in root `.env.example`.

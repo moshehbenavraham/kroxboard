@@ -7,6 +7,7 @@ import {
 	probeModel,
 } from "@/lib/model-probe";
 import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
 
 const CONFIG_PATH = OPENCLAW_CONFIG_PATH;
 const PROBE_TIMEOUT_MS = DEFAULT_MODEL_PROBE_TIMEOUT_MS;
@@ -32,7 +33,10 @@ function loadAgentList(config: any): AgentConfig[] {
 	return agentList;
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+	const access = requireSensitiveRouteAccess(request);
+	if (!access.ok) return access.response;
+
 	try {
 		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
 		const config = JSON.parse(raw);
@@ -109,6 +113,6 @@ export async function POST() {
 	}
 }
 
-export async function GET() {
-	return POST();
+export async function GET(request: Request) {
+	return POST(request);
 }
