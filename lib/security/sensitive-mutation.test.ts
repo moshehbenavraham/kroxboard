@@ -42,11 +42,7 @@ async function makeSessionCookie(identity: {
 		"@/lib/security/operator-session"
 	);
 	const env = parseDashboardAuthEnv(process.env);
-	const { token } = createOperatorSession(
-		identity,
-		env,
-		new Date("2026-03-31T00:00:00.000Z"),
-	);
+	const { token } = createOperatorSession(identity, env, new Date());
 	return `${OPERATOR_SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`;
 }
 

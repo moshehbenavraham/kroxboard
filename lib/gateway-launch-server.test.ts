@@ -34,6 +34,18 @@ describe("gateway launch server helpers", () => {
 		).toBe("agent:main:main");
 	});
 
+	it("returns the provided key for explicit session launches", async () => {
+		const { resolveGatewayLaunchSessionKey } = await import(
+			"./gateway-launch-server"
+		);
+		expect(
+			resolveGatewayLaunchSessionKey({
+				kind: "session",
+				sessionKey: "agent:main:discord:direct:12345",
+			}),
+		).toBe("agent:main:discord:direct:12345");
+	});
+
 	it("resolves platform launches from the stored sessions index", async () => {
 		writeJson(path.join(tempHome, "agents/main/sessions/sessions.json"), {
 			"agent:main:discord:direct:older": { updatedAt: 1 },
@@ -70,5 +82,19 @@ describe("gateway launch server helpers", () => {
 				platform: "discord",
 			}),
 		).toBe("agent:main:discord:direct:fallback-user");
+	});
+
+	it("returns null for non-discord platforms without a stored direct session", async () => {
+		writeJson(path.join(tempHome, "agents/main/sessions/sessions.json"), {});
+		const { resolveGatewayLaunchSessionKey } = await import(
+			"./gateway-launch-server"
+		);
+		expect(
+			resolveGatewayLaunchSessionKey({
+				kind: "platform",
+				agentId: "main",
+				platform: "telegram",
+			}),
+		).toBeNull();
 	});
 });

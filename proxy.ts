@@ -7,7 +7,7 @@ const rateLimitMap = new Map<string, { count: number; lastReset: number }>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 100;
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
 	const response = NextResponse.next();
 
 	// 1. Security Headers

@@ -19,7 +19,7 @@ export default defineConfig({
 				"app/api/skills/**/*.ts",
 				"app/components/operator-elevation-provider.tsx",
 				"app/components/operator-elevation-dialog.tsx",
-				"middleware.ts",
+				"proxy.ts",
 			],
 			exclude: [
 				"**/*.test.{ts,tsx}",

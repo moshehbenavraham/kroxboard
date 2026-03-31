@@ -33,10 +33,10 @@ Next.js Middleware (rate limiting, security headers)
 
 ## Components
 
-### Next.js Middleware (`middleware.ts`)
+### Next.js Proxy (`proxy.ts`)
 - **Purpose**: Security headers and rate limiting for all routes
-- **Tech**: Next.js Edge Middleware
-- **Location**: `middleware.ts`
+- **Tech**: Next.js Proxy runtime
+- **Location**: `proxy.ts`
 
 ### API Route Handlers
 - **Purpose**: Server-side endpoints for config, health, stats, alerts, and operator actions
@@ -72,7 +72,7 @@ Next.js Middleware (rate limiting, security headers)
 
 | Technology | Purpose | Why Chosen |
 |------------|---------|------------|
-| Next.js 16 | Full-stack framework | App Router provides server components, API routes, and middleware in one package |
+| Next.js 16 | Full-stack framework | App Router provides server components, API routes, and proxy/runtime security hooks in one package |
 | React 19 | UI rendering | Server Components for data fetching, Client Components for interactivity |
 | TypeScript 5 | Type safety | Catch misuse of config shapes, route params, and security utilities at build time |
 | Tailwind CSS 4 | Styling | Utility-first CSS with zero runtime overhead |

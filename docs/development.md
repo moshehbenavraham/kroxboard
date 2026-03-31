@@ -33,7 +33,7 @@
 | `lib/` | Shared utilities (security, bridge, i18n, logging) |
 | `lib/security/` | Auth, operator session, env flag checks, route guards |
 | `lib/pixel-office/` | Pixel office rendering engine |
-| `tests/` | Test files |
+| `*.test.ts[x]` | Co-located Vitest test files next to the code they cover |
 | `scripts/` | Operational scripts (backup) |
 | `public/` | Static assets |
 | `docs/` | Project and security documentation |

@@ -17,7 +17,10 @@ interface AgentStatus {
 }
 
 function getAgentState(agentId: string): AgentStatus {
-	const sessionsDir = path.join(OPENCLAW_HOME, `agents/${agentId}/sessions`);
+	const sessionsDir = path.join(
+		/*turbopackIgnore: true*/ OPENCLAW_HOME,
+		`agents/${agentId}/sessions`,
+	);
 	const now = Date.now();
 	let lastActive: number | null = null;
 	let lastAssistantTs: number | null = null;
@@ -89,7 +92,10 @@ function getAgentState(agentId: string): AgentStatus {
 
 export async function GET() {
 	try {
-		const agentsDir = path.join(OPENCLAW_HOME, "agents");
+		const agentsDir = path.join(
+			/*turbopackIgnore: true*/ OPENCLAW_HOME,
+			"agents",
+		);
 		let agentIds: string[];
 		try {
 			agentIds = fs

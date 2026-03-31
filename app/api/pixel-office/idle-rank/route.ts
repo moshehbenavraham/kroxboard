@@ -10,7 +10,10 @@ let cache: { data: unknown; ts: number } | null = null;
 const CACHE_TTL = 5 * 60 * 1000;
 
 function buildIdleRankData() {
-	const agentsDir = path.join(OPENCLAW_HOME, "agents");
+	const agentsDir = path.join(
+		/*turbopackIgnore: true*/ OPENCLAW_HOME,
+		"agents",
+	);
 	let agentIds: string[];
 	try {
 		agentIds = fs

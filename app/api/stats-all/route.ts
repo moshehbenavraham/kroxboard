@@ -31,7 +31,10 @@ interface InternalDayStat extends DayStat {
 }
 
 async function parseAgentSessions(agentId: string): Promise<InternalDayStat[]> {
-	const sessionsDir = path.join(OPENCLAW_HOME, `agents/${agentId}/sessions`);
+	const sessionsDir = path.join(
+		/*turbopackIgnore: true*/ OPENCLAW_HOME,
+		`agents/${agentId}/sessions`,
+	);
 	const dayMap: Record<string, InternalDayStat> = {};
 
 	const fileNames = await listBoundedDirectory(sessionsDir, {
@@ -191,7 +194,10 @@ async function buildStatsPayload(): Promise<{
 	monthly: DayStat[];
 	weekly: DayStat[];
 }> {
-	const agentsDir = path.join(OPENCLAW_HOME, "agents");
+	const agentsDir = path.join(
+		/*turbopackIgnore: true*/ OPENCLAW_HOME,
+		"agents",
+	);
 	const agentIds = await listBoundedDirectory(agentsDir, {
 		allowMissing: true,
 		filter: (entry) => entry.isDirectory(),

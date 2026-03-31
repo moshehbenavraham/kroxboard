@@ -22,9 +22,12 @@ describe("config cache", () => {
 
 	it("returns an isolated snapshot to callers", () => {
 		setConfigCache({ data: { agents: [{ id: "main" }] }, ts: 1 });
-		const cached = getConfigCache();
+		const cached = getConfigCache<{ agents: Array<{ id: string }> }>();
 		expect(cached).not.toBeNull();
-		cached?.data.agents.push({ id: "helper" });
+		if (!cached) {
+			throw new Error("Expected cached config to be present");
+		}
+		cached.data.agents.push({ id: "helper" });
 
 		expect(getConfigCache()).toEqual({
 			data: { agents: [{ id: "main" }] },

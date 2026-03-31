@@ -5,7 +5,7 @@
 
 # Security layer
 lib/security/ moshehwebservices@live.com
-middleware.ts moshehwebservices@live.com
+proxy.ts moshehwebservices@live.com
 
 # API routes
 app/api/ moshehwebservices@live.com

@@ -65,6 +65,7 @@ async function handleAlertWrite(request: Request): Promise<NextResponse> {
 					}
 				}
 			}
+			return draft;
 		});
 
 		return NextResponse.json(config);

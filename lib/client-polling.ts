@@ -24,7 +24,7 @@ export interface ClientPollerOptions<T> {
 	> | null;
 }
 
-export interface ClientPoller<T> {
+export interface ClientPoller<_T> {
 	start(): void;
 	stop(): void;
 	trigger(): Promise<void>;

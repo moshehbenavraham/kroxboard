@@ -9,10 +9,16 @@ const CRON_STORE_PREFERRED_SEGMENTS = ["cron-store", "jobs.json"] as const;
 const CRON_STORE_LEGACY_SEGMENTS = ["cron", "jobs.json"] as const;
 
 export const OPENCLAW_HOME = process.env.OPENCLAW_HOME || DEFAULT_OPENCLAW_HOME;
-export const OPENCLAW_CONFIG_PATH = path.join(OPENCLAW_HOME, "openclaw.json");
-export const OPENCLAW_AGENTS_DIR = path.join(OPENCLAW_HOME, "agents");
+export const OPENCLAW_CONFIG_PATH = path.join(
+	/*turbopackIgnore: true*/ OPENCLAW_HOME,
+	"openclaw.json",
+);
+export const OPENCLAW_AGENTS_DIR = path.join(
+	/*turbopackIgnore: true*/ OPENCLAW_HOME,
+	"agents",
+);
 export const OPENCLAW_PIXEL_OFFICE_DIR = path.join(
-	OPENCLAW_HOME,
+	/*turbopackIgnore: true*/ OPENCLAW_HOME,
 	"pixel-office",
 );
 
@@ -41,7 +47,7 @@ function uniquePaths(paths: Array<string | undefined>): string[] {
 }
 
 function normalizeAbsolutePath(value: string): string {
-	return path.resolve(value);
+	return path.resolve(/*turbopackIgnore: true*/ value);
 }
 
 function expandHomePath(value: string, userHome = home): string {
@@ -86,7 +92,10 @@ function resolveWithinBoundary(
 	boundaryPath: string,
 	...segments: string[]
 ): string | null {
-	const candidatePath = path.resolve(boundaryPath, ...segments);
+	const candidatePath = path.resolve(
+		/*turbopackIgnore: true*/ boundaryPath,
+		...segments,
+	);
 	return isPathWithinBoundary(candidatePath, boundaryPath)
 		? candidatePath
 		: null;
@@ -253,7 +262,6 @@ function getOpenclawPathErrorMessage(code: OpenclawPathErrorCode): string {
 			return "OpenClaw agents path is invalid";
 		case "openclaw_cron_store_path_invalid":
 			return "OpenClaw cron store path is invalid";
-		case "openclaw_runtime_path_invalid":
 		default:
 			return "OpenClaw runtime path is invalid";
 	}

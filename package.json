@@ -1,6 +1,6 @@
 {
 	"name": "openclaw-bot-review",
-	"version": "1.0.16",
+	"version": "1.0.17",
 	"private": true,
 	"license": "MIT",
 	"scripts": {
@@ -13,7 +13,7 @@
 	},
 	"dependencies": {
 		"@tailwindcss/postcss": "^4.0.0",
-		"@types/node": "^22.0.0",
+		"@types/node": "^25.0.0",
 		"@types/react": "^19.0.0",
 		"next": "^16.0.0",
 		"pino": "^10.3.1",
@@ -22,7 +22,7 @@
 		"react": "^19.0.0",
 		"react-dom": "^19.0.0",
 		"tailwindcss": "^4.0.0",
-		"typescript": "^5.0.0"
+		"typescript": "^6.0.0"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.10",

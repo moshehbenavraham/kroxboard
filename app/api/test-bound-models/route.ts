@@ -27,7 +27,10 @@ function loadAgentList(config: any): AgentConfig[] {
 	if (agentList.length > 0) return agentList;
 
 	try {
-		const agentsDir = path.join(OPENCLAW_HOME, "agents");
+		const agentsDir = path.join(
+			/*turbopackIgnore: true*/ OPENCLAW_HOME,
+			"agents",
+		);
 		const dirs = fs.readdirSync(agentsDir, { withFileTypes: true });
 		agentList = dirs
 			.filter((d) => d.isDirectory() && !d.name.startsWith("."))

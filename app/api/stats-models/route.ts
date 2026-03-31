@@ -41,7 +41,10 @@ interface ParsedModelMessage {
 }
 
 async function buildModelStatsPayload(): Promise<{ models: ModelStat[] }> {
-	const agentsDir = path.join(OPENCLAW_HOME, "agents");
+	const agentsDir = path.join(
+		/*turbopackIgnore: true*/ OPENCLAW_HOME,
+		"agents",
+	);
 	const agentIds = await listBoundedDirectory(agentsDir, {
 		allowMissing: true,
 		filter: (entry) => entry.isDirectory(),

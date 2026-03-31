@@ -1,7 +1,7 @@
 import fs, { promises as fsPromises } from "node:fs";
 
 export function stripUtf8Bom(text: string): string {
-	return text.replace(/^\uFEFF/, "");
+	return text.startsWith("\uFEFF") ? text.slice(1) : text;
 }
 
 export function parseJsonText<T = any>(text: string): T {

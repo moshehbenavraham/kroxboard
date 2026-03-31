@@ -52,7 +52,7 @@ describe("GET /api/operator/session", () => {
 		const { token } = createOperatorSession(
 			{ mode: "localhost", subject: "localhost", email: null, isLocal: true },
 			env,
-			new Date("2026-03-31T00:00:00.000Z"),
+			new Date(),
 		);
 
 		const response = await route.GET(

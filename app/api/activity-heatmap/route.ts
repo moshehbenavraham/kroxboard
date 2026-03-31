@@ -20,7 +20,10 @@ const MAX_SESSION_FILE_BYTES = 1_048_576;
 async function buildHeatmapData(): Promise<{
 	agents: { agentId: string; grid: number[][] }[];
 }> {
-	const agentsDir = path.join(OPENCLAW_HOME, "agents");
+	const agentsDir = path.join(
+		/*turbopackIgnore: true*/ OPENCLAW_HOME,
+		"agents",
+	);
 	const agentIds = await listBoundedDirectory(agentsDir, {
 		allowMissing: true,
 		filter: (entry) => entry.isDirectory(),

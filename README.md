@@ -29,8 +29,9 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 |   |-- security/          # Auth, operator session, env flags, route guards
 |   \-- pixel-office/      # Pixel office engine and rendering
 |-- docs/                  # Project and security documentation
+|   |-- runbooks/          # Operational response procedures
 |-- scripts/               # Operational scripts (backup, etc.)
-|-- tests/                 # Test suites
+|-- *.test.ts[x]           # Co-located unit, route, and component tests
 |-- public/                # Static assets
 \-- .spec_system/          # Specification-driven development state
 ```
@@ -140,7 +141,7 @@ See [Deployment Guide](docs/deployment.md) for Cloudflare Tunnel and production 
 
 ## Project Status
 
-See [PRD](.spec_system/PRD/PRD.md) for current progress and roadmap.
+Phase 03 closeout is complete. See [PRD](.spec_system/PRD/PRD.md) for the archived remediation plan and [Security Master Plan](docs/SECURITY_MASTER.md) for the current security posture.
 
 ## License
 

@@ -179,7 +179,10 @@ export async function POST(request: Request) {
 			: [];
 		if (agentList.length === 0) {
 			try {
-				const agentsDir = path.join(OPENCLAW_HOME, "agents");
+				const agentsDir = path.join(
+					/*turbopackIgnore: true*/ OPENCLAW_HOME,
+					"agents",
+				);
 				const dirs = fs.readdirSync(agentsDir, { withFileTypes: true });
 				agentList = dirs
 					.filter(

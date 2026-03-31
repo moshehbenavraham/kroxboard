@@ -596,6 +596,7 @@ export async function POST(request: Request) {
 					...(draft.lastAlerts || {}),
 					...config.lastAlerts,
 				};
+				return draft;
 			});
 		}
 

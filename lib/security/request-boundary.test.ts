@@ -109,6 +109,20 @@ describe("extended request payload validators", () => {
 		});
 	});
 
+	it("rejects operator code input with control characters", () => {
+		expect(
+			validateOperatorCodeInput({
+				code: "valid\u0000code",
+			}),
+		).toMatchObject({
+			ok: false,
+			error: {
+				field: "code",
+				reason: "invalid_format",
+			},
+		});
+	});
+
 	it("validates model mutation input", () => {
 		expect(
 			validateModelMutationInput({
@@ -120,6 +134,21 @@ describe("extended request payload validators", () => {
 			value: {
 				agentId: "main",
 				model: "provider/model-one",
+			},
+		});
+	});
+
+	it("rejects malformed model references", () => {
+		expect(
+			validateModelMutationInput({
+				agentId: "main",
+				model: "provider-only",
+			}),
+		).toMatchObject({
+			ok: false,
+			error: {
+				field: "model",
+				reason: "invalid_format",
 			},
 		});
 	});
@@ -142,6 +171,21 @@ describe("extended request payload validators", () => {
 			invalid: {
 				field: "modelId",
 				reason: "missing",
+			},
+		});
+	});
+
+	it("rejects provider probe ids containing unsafe whitespace", () => {
+		expect(
+			validateProviderProbeInput({
+				provider: "bad provider",
+				modelId: "gpt-4.1",
+			}),
+		).toMatchObject({
+			ok: false,
+			error: {
+				field: "provider",
+				reason: "invalid_format",
 			},
 		});
 	});
@@ -175,6 +219,16 @@ describe("extended request payload validators", () => {
 						targetAgents: ["main", "helper"],
 					},
 				],
+			},
+		});
+	});
+
+	it("rejects empty alert-write updates", () => {
+		expect(validateAlertWriteInput({})).toMatchObject({
+			ok: false,
+			error: {
+				field: "body",
+				reason: "invalid_value",
 			},
 		});
 	});
@@ -246,6 +300,37 @@ describe("extended request payload validators", () => {
 					],
 				},
 			},
+		});
+	});
+
+	it("accepts tile colors and furniture rotation when they are valid", () => {
+		expect(
+			validatePixelOfficeLayoutInput({
+				layout: {
+					version: 1,
+					cols: 2,
+					rows: 2,
+					tiles: [1, 1, 1, 1],
+					tileColors: [
+						null,
+						{ h: 0, s: 0, b: 0, c: 0, colorize: false },
+						null,
+						null,
+					],
+					furniture: [
+						{
+							uid: "desk-1",
+							type: "desk",
+							col: 0,
+							row: 0,
+							rotation: 90,
+							color: { h: 1, s: 2, b: 3, c: 4, colorize: true },
+						},
+					],
+				},
+			}),
+		).toMatchObject({
+			ok: true,
 		});
 	});
 

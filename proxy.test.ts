@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { middleware } from "./middleware";
+import { proxy } from "./proxy";
 
 function createMockRequest(
 	url: string,
@@ -12,10 +12,10 @@ function createMockRequest(
 	});
 }
 
-describe("middleware", () => {
+describe("proxy", () => {
 	it("sets security headers", () => {
 		const request = createMockRequest("http://localhost:3000/api/test");
-		const response = middleware(request);
+		const response = proxy(request);
 
 		expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
 		expect(response.headers.get("X-Frame-Options")).toBe("DENY");
@@ -38,7 +38,7 @@ describe("middleware", () => {
 
 	it("sets Content-Security-Policy header", () => {
 		const request = createMockRequest("http://localhost:3000/");
-		const response = middleware(request);
+		const response = proxy(request);
 
 		const csp = response.headers.get("Content-Security-Policy");
 		expect(csp).toContain("default-src 'self'");
@@ -49,13 +49,13 @@ describe("middleware", () => {
 
 	it("sets HSTS only for HTTPS requests", () => {
 		const httpsRequest = createMockRequest("https://board.example.com/");
-		const httpsResponse = middleware(httpsRequest);
+		const httpsResponse = proxy(httpsRequest);
 		expect(httpsResponse.headers.get("Strict-Transport-Security")).toBe(
 			"max-age=63072000; includeSubDomains; preload",
 		);
 
 		const httpRequest = createMockRequest("http://localhost:3000/");
-		const httpResponse = middleware(httpRequest);
+		const httpResponse = proxy(httpRequest);
 		expect(httpResponse.headers.get("Strict-Transport-Security")).toBeNull();
 	});
 
@@ -63,7 +63,7 @@ describe("middleware", () => {
 		const request = createMockRequest("http://localhost:3000/api/test", {
 			"x-forwarded-for": "10.0.0.1",
 		});
-		const response = middleware(request);
+		const response = proxy(request);
 
 		expect(response.headers.get("X-RateLimit-Limit")).toBe("100");
 		const remaining = Number(response.headers.get("X-RateLimit-Remaining"));
@@ -76,7 +76,7 @@ describe("middleware", () => {
 		const r1 = createMockRequest("http://localhost:3000/api/test", {
 			"cf-connecting-ip": "1.2.3.4",
 		});
-		const res1 = middleware(r1);
+		const res1 = proxy(r1);
 		expect(res1.status).not.toBe(429);
 	});
 
@@ -86,7 +86,7 @@ describe("middleware", () => {
 			const req = createMockRequest("http://localhost:3000/api/test", {
 				"cf-connecting-ip": ip,
 			});
-			const res = middleware(req);
+			const res = proxy(req);
 			if (i === 100) {
 				expect(res.status).toBe(429);
 				expect(res.headers.get("Retry-After")).toBe("60");

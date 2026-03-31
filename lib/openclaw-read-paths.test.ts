@@ -51,6 +51,43 @@ describe("openclaw-read-paths", () => {
 		});
 	});
 
+	it("returns empty results for missing paths when allowMissing is enabled", async () => {
+		await expect(
+			listBoundedDirectory(path.join(tempDir, "missing"), {
+				allowMissing: true,
+				maxEntries: 4,
+			}),
+		).resolves.toEqual([]);
+
+		await expect(
+			readBoundedTextFile(path.join(tempDir, "missing.json"), {
+				allowMissing: true,
+				maxBytes: 16,
+			}),
+		).resolves.toBeNull();
+	});
+
+	it("rethrows missing files when allowMissing is disabled and supports unfiltered scans", async () => {
+		const dirPath = path.join(tempDir, "skills");
+		fs.mkdirSync(dirPath, { recursive: true });
+		fs.writeFileSync(path.join(dirPath, "b.txt"), "b");
+		fs.writeFileSync(path.join(dirPath, "a.txt"), "a");
+
+		await expect(
+			listBoundedDirectory(dirPath, {
+				maxEntries: 4,
+			}),
+		).resolves.toEqual(["a.txt", "b.txt"]);
+
+		await expect(
+			readBoundedTextFile(path.join(tempDir, "missing.json"), {
+				maxBytes: 16,
+			}),
+		).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+	});
+
 	it("dedupes in-flight computations and reuses cached results until ttl expiry", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date("2026-03-31T10:00:00.000Z"));

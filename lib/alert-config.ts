@@ -237,7 +237,7 @@ export async function writeAlertConfig(
 export async function updateAlertConfig(
 	update: (
 		config: AlertConfig,
-	) => AlertConfig | void | Promise<AlertConfig | void>,
+	) => AlertConfig | undefined | Promise<AlertConfig | undefined>,
 ): Promise<AlertConfig> {
 	const configPath = resolveOpenclawAlertsConfigFileOrThrow();
 	return withAlertConfigWriteLock(configPath, async () => {

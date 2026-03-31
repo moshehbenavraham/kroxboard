@@ -170,6 +170,53 @@ description: Nested in extension
 			expect(skill?.emoji).toBe("[tool]");
 		});
 
+		it("falls back to the first package candidate and default metadata when frontmatter is incomplete", async () => {
+			fs.rmSync(path.join(tempPkgDir, "package.json"));
+			const skillDir = path.join(tempPkgDir, "skills", "partial-frontmatter");
+			fs.mkdirSync(skillDir, { recursive: true });
+			fs.writeFileSync(
+				path.join(skillDir, "SKILL.md"),
+				"---\nname: Broken frontmatter",
+			);
+			writeConfigFile([]);
+
+			const { listOpenclawSkills } = await import("@/lib/openclaw-skills");
+			const result = await listOpenclawSkills();
+			const skill = result.skills.find(
+				(entry) => entry.id === "partial-frontmatter",
+			);
+			expect(skill).toBeDefined();
+			expect(skill?.name).toBe("partial-frontmatter");
+			expect(skill?.emoji).toBe("[tool]");
+		});
+
+		it("reads custom skills and preserves emoji metadata from frontmatter", async () => {
+			const skillDir = path.join(tempDir, "skills", "emoji-skill");
+			fs.mkdirSync(skillDir, { recursive: true });
+			fs.writeFileSync(
+				path.join(skillDir, "SKILL.md"),
+				`---
+name: Emoji Skill
+description: With emoji
+"emoji": ":zap:"
+---
+# Emoji Skill
+`,
+			);
+			writeConfigFile([]);
+
+			const { listOpenclawSkills, getOpenclawSkillContent } = await import(
+				"@/lib/openclaw-skills"
+			);
+			const list = await listOpenclawSkills();
+			expect(
+				list.skills.find((skill) => skill.id === "emoji-skill")?.emoji,
+			).toBe(":zap:");
+
+			const content = await getOpenclawSkillContent("custom", "emoji-skill");
+			expect(content?.skill.emoji).toBe(":zap:");
+		});
+
 		it("ignores malformed snapshots and oversize snapshot files while collecting usedBy hints", async () => {
 			const skillDir = path.join(tempPkgDir, "skills", "code-review");
 			fs.mkdirSync(skillDir, { recursive: true });
@@ -209,6 +256,33 @@ description: Nested in extension
 			const { listOpenclawSkills } = await import("@/lib/openclaw-skills");
 			const result = await listOpenclawSkills();
 			expect(result.skills).toEqual([]);
+		});
+
+		it("ignores malformed config payloads and malformed agent entries", async () => {
+			fs.writeFileSync(path.join(tempDir, "openclaw.json"), JSON.stringify([]));
+			const { listOpenclawSkills } = await import("@/lib/openclaw-skills");
+			await expect(listOpenclawSkills()).resolves.toMatchObject({
+				agents: {},
+			});
+
+			fs.writeFileSync(
+				path.join(tempDir, "openclaw.json"),
+				JSON.stringify({
+					agents: {
+						list: [
+							null,
+							{ id: "", name: "ignored" },
+							{ id: "helper", identity: { name: "  ", emoji: "   " } },
+						],
+					},
+				}),
+			);
+
+			const result = await listOpenclawSkills();
+			expect(result.agents.helper).toEqual({
+				name: "helper",
+				emoji: "[bot]",
+			});
 		});
 	});
 
@@ -251,6 +325,32 @@ description: For testing
 			).rejects.toMatchObject({
 				code: "file_too_large",
 			});
+		});
+
+		it("returns extension root content when the id matches the extension name", async () => {
+			const extensionDir = path.join(tempPkgDir, "extensions", "root-ext");
+			fs.mkdirSync(extensionDir, { recursive: true });
+			fs.writeFileSync(
+				path.join(extensionDir, "SKILL.md"),
+				"---\nname: Root Extension\ndescription: Root skill\n---\n# Root Extension\n",
+			);
+			writeConfigFile([]);
+
+			const { getOpenclawSkillContent } = await import("@/lib/openclaw-skills");
+			const result = await getOpenclawSkillContent(
+				"extension:root-ext",
+				"root-ext",
+			);
+			expect(result?.skill.id).toBe("root-ext");
+			expect(result?.content).toContain("Root Extension");
+		});
+
+		it("returns null for unsupported skill sources", async () => {
+			writeConfigFile([]);
+			const { getOpenclawSkillContent } = await import("@/lib/openclaw-skills");
+			await expect(
+				getOpenclawSkillContent("unsupported", "whatever"),
+			).resolves.toBeNull();
 		});
 	});
 });
