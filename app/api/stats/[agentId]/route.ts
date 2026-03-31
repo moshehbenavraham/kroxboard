@@ -1,5 +1,6 @@
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { MAX_ANALYTICS_SESSION_FILE_BYTES } from "@/lib/openclaw-analytics";
 import { resolveOpenclawAgentSessionsDir } from "@/lib/openclaw-paths";
 import {
 	listBoundedDirectory,
@@ -11,7 +12,6 @@ import {
 } from "@/lib/security/request-boundary";
 
 const MAX_SESSION_FILES_PER_AGENT = 256;
-const MAX_SESSION_FILE_BYTES = 1_048_576;
 
 interface DayStat {
 	date: string; // YYYY-MM-DD
@@ -41,7 +41,7 @@ async function parseSessions(
 		const filePath = path.join(sessionsDir, file);
 		const content = await readBoundedTextFile(filePath, {
 			allowMissing: true,
-			maxBytes: MAX_SESSION_FILE_BYTES,
+			maxBytes: MAX_ANALYTICS_SESSION_FILE_BYTES,
 		});
 		if (!content) {
 			continue;

@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClientPoller } from "@/lib/client-polling";
+import { createClientPoller, readPollJsonResponse } from "@/lib/client-polling";
 import { useI18n } from "@/lib/i18n";
+
+const GATEWAY_HEALTH_POLL_INTERVAL_MS = 30000;
+const GATEWAY_HEALTH_REUSE_RESULT_MS = 25000;
 
 interface HealthResult {
 	ok: boolean;
@@ -30,13 +33,13 @@ export function GatewayStatus({
 
 	useEffect(() => {
 		const poller = createClientPoller<HealthResult>({
-			intervalMs: 10_000,
+			intervalMs: GATEWAY_HEALTH_POLL_INTERVAL_MS,
 			immediate: true,
 			sharedKey: "gateway-health",
-			reuseResultMs: 5_000,
+			reuseResultMs: GATEWAY_HEALTH_REUSE_RESULT_MS,
 			request: async (signal) => {
 				const response = await fetch("/api/gateway-health", { signal });
-				return response.json();
+				return readPollJsonResponse<HealthResult>(response);
 			},
 			onSuccess: (result) => {
 				setHealth(result);

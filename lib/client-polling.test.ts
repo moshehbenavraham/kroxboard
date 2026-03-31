@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createClientPoller } from "./client-polling";
+import { createClientPoller, readPollJsonResponse } from "./client-polling";
 
 function setVisibilityState(state: "visible" | "hidden"): void {
 	Object.defineProperty(document, "visibilityState", {
@@ -117,5 +117,50 @@ describe("client-polling", () => {
 
 		expect(poller.isInFlight()).toBe(false);
 		poller.stop();
+	});
+
+	it("honors Retry-After delays returned by failed polls", async () => {
+		const rateLimitedError = Object.assign(new Error("rate limited"), {
+			retryAfterMs: 5_000,
+		});
+		const request = vi
+			.fn<() => Promise<string>>()
+			.mockRejectedValueOnce(rateLimitedError)
+			.mockResolvedValue("recovered");
+		const poller = createClientPoller({
+			intervalMs: 1_000,
+			immediate: true,
+			request,
+		});
+
+		poller.start();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(request).toHaveBeenCalledTimes(1);
+
+		await vi.advanceTimersByTimeAsync(4_999);
+		expect(request).toHaveBeenCalledTimes(1);
+
+		await vi.advanceTimersByTimeAsync(1);
+		expect(request).toHaveBeenCalledTimes(2);
+
+		poller.stop();
+	});
+
+	it("rejects non-ok fetch responses with status and retry metadata", async () => {
+		const response = new Response(JSON.stringify({ error: "rate limited" }), {
+			status: 429,
+			statusText: "Too Many Requests",
+			headers: {
+				"Content-Type": "application/json",
+				"Retry-After": "7",
+			},
+		});
+
+		await expect(readPollJsonResponse(response)).rejects.toMatchObject({
+			name: "PollResponseError",
+			message: "Too Many Requests",
+			status: 429,
+			retryAfterMs: 7_000,
+		});
 	});
 });

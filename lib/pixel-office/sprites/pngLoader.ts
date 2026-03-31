@@ -3,6 +3,10 @@ import { setWallSprites } from "../wallTiles";
 import type { LoadedCharacterData } from "./spriteData";
 import { setCharacterTemplates } from "./spriteData";
 
+type CharacterAssetManifest = {
+	characters: string[];
+};
+
 /**
  * Load a PNG image and convert it to SpriteData (2D array of hex color strings).
  * Transparent pixels become '' (empty string).
@@ -136,6 +140,32 @@ function stripOpaqueSheetBackground(sprite: SpriteData): SpriteData {
 	return result;
 }
 
+function isCharacterAssetManifest(
+	value: unknown,
+): value is CharacterAssetManifest {
+	if (!value || typeof value !== "object") return false;
+	const characters = (value as CharacterAssetManifest).characters;
+	return (
+		Array.isArray(characters) &&
+		characters.every((entry) => typeof entry === "string")
+	);
+}
+
+async function fetchCharacterSpriteUrls(): Promise<string[] | null> {
+	try {
+		const response = await fetch("/api/pixel-office/assets", {
+			cache: "no-store",
+		});
+		if (!response.ok) return null;
+
+		const payload: unknown = await response.json();
+		if (!isCharacterAssetManifest(payload)) return null;
+		return payload.characters;
+	} catch {
+		return null;
+	}
+}
+
 /**
  * Extract a sub-region from a SpriteData array.
  */
@@ -196,49 +226,48 @@ function parseCharacterSheet(sheet: SpriteData): LoadedCharacterData {
 	};
 }
 
+async function loadCharacterSheet(
+	src: string,
+	characterSheetWidth: number,
+	characterSheetHeight: number,
+): Promise<LoadedCharacterData> {
+	const img = await loadImage(src);
+	const sheet = stripOpaqueSheetBackground(
+		normalizedSpriteData(img, characterSheetWidth, characterSheetHeight),
+	);
+	return parseCharacterSheet(sheet);
+}
+
 /**
  * Load character PNGs from /assets/pixel-office/characters/ and register them.
- * Loads the default set plus any extra contiguous char_N.png files.
+ * Loads the default set plus any extra manifest-declared char_N.png files.
  * Falls back silently to hardcoded templates if the base set fails.
  */
 export async function loadCharacterPNGs(): Promise<boolean> {
 	try {
 		const characters: LoadedCharacterData[] = [];
 		const baseCharacterCount = 6;
-		const maxCharacterCount = 64;
 		const CHARACTER_SHEET_WIDTH = 112;
 		const CHARACTER_SHEET_HEIGHT = 96;
+		const manifestCharacterUrls = await fetchCharacterSpriteUrls();
+		const baseCharacterUrls = Array.from(
+			{ length: baseCharacterCount },
+			(_, index) => `/assets/pixel-office/characters/char_${index}.png`,
+		);
+		const characterUrls =
+			manifestCharacterUrls &&
+			manifestCharacterUrls.length >= baseCharacterCount
+				? manifestCharacterUrls
+				: baseCharacterUrls;
 
-		for (let i = 0; i < baseCharacterCount; i++) {
-			const img = await loadImage(
-				`/assets/pixel-office/characters/char_${i}.png`,
-			);
-			const sheet = stripOpaqueSheetBackground(
-				normalizedSpriteData(
-					img,
+		for (const characterUrl of characterUrls) {
+			characters.push(
+				await loadCharacterSheet(
+					characterUrl,
 					CHARACTER_SHEET_WIDTH,
 					CHARACTER_SHEET_HEIGHT,
 				),
 			);
-			characters.push(parseCharacterSheet(sheet));
-		}
-
-		for (let i = baseCharacterCount; i < maxCharacterCount; i++) {
-			try {
-				const img = await loadImage(
-					`/assets/pixel-office/characters/char_${i}.png`,
-				);
-				const sheet = stripOpaqueSheetBackground(
-					normalizedSpriteData(
-						img,
-						CHARACTER_SHEET_WIDTH,
-						CHARACTER_SHEET_HEIGHT,
-					),
-				);
-				characters.push(parseCharacterSheet(sheet));
-			} catch {
-				break;
-			}
 		}
 
 		setCharacterTemplates(characters);

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { MAX_ANALYTICS_SESSION_FILE_BYTES } from "@/lib/openclaw-analytics";
 import { OPENCLAW_HOME } from "@/lib/openclaw-paths";
 import {
 	getCachedComputation,
@@ -15,7 +16,6 @@ const CACHE_KEY = "activity-heatmap";
 const CACHE_TTL = 5 * 60 * 1000;
 const MAX_AGENT_COUNT = 128;
 const MAX_SESSION_FILES_PER_AGENT = 256;
-const MAX_SESSION_FILE_BYTES = 1_048_576;
 
 async function buildHeatmapData(): Promise<{
 	agents: { agentId: string; grid: number[][] }[];
@@ -49,7 +49,7 @@ async function buildHeatmapData(): Promise<{
 		for (const file of files) {
 			const content = await readBoundedTextFile(path.join(sessionsDir, file), {
 				allowMissing: true,
-				maxBytes: MAX_SESSION_FILE_BYTES,
+				maxBytes: MAX_ANALYTICS_SESSION_FILE_BYTES,
 			});
 			if (!content) {
 				continue;

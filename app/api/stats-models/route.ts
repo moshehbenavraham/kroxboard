@@ -1,5 +1,6 @@
 import path from "node:path";
 import { NextResponse } from "next/server";
+import { MAX_ANALYTICS_SESSION_FILE_BYTES } from "@/lib/openclaw-analytics";
 import { OPENCLAW_HOME } from "@/lib/openclaw-paths";
 import {
 	getCachedComputation,
@@ -11,7 +12,6 @@ const CACHE_KEY = "stats-models";
 const CACHE_TTL_MS = 30_000;
 const MAX_AGENT_COUNT = 128;
 const MAX_SESSION_FILES_PER_AGENT = 256;
-const MAX_SESSION_FILE_BYTES = 1_048_576;
 
 interface ModelStat {
 	modelId: string;
@@ -70,7 +70,7 @@ async function buildModelStatsPayload(): Promise<{ models: ModelStat[] }> {
 					path.join(sessionsDir, fileName),
 					{
 						allowMissing: true,
-						maxBytes: MAX_SESSION_FILE_BYTES,
+						maxBytes: MAX_ANALYTICS_SESSION_FILE_BYTES,
 					},
 				);
 				if (!content) {

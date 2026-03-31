@@ -31,6 +31,11 @@ export interface ClientPoller<_T> {
 	isInFlight(): boolean;
 }
 
+export interface PollResponseError extends Error {
+	status: number;
+	retryAfterMs: number | null;
+}
+
 interface SharedPollState<T> {
 	promise: Promise<T> | null;
 	value: T | null;
@@ -41,6 +46,42 @@ const sharedPollState = new Map<string, SharedPollState<unknown>>();
 
 function isAbortError(error: unknown): boolean {
 	return error instanceof Error && error.name === "AbortError";
+}
+
+function parseRetryAfterMs(retryAfterHeader: string | null): number | null {
+	if (!retryAfterHeader) return null;
+
+	const retryAfterSeconds = Number(retryAfterHeader);
+	if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+		return retryAfterSeconds * 1000;
+	}
+
+	const retryAt = Date.parse(retryAfterHeader);
+	if (!Number.isFinite(retryAt)) return null;
+	return Math.max(0, retryAt - Date.now());
+}
+
+function getRetryAfterMs(error: unknown): number | null {
+	if (!error || typeof error !== "object") return null;
+	if (!("retryAfterMs" in error)) return null;
+	const retryAfterMs = (error as { retryAfterMs?: unknown }).retryAfterMs;
+	return typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs)
+		? retryAfterMs
+		: null;
+}
+
+export async function readPollJsonResponse<T>(response: Response): Promise<T> {
+	if (!response.ok) {
+		const error = new Error(
+			response.statusText || `HTTP ${response.status}`,
+		) as PollResponseError;
+		error.name = "PollResponseError";
+		error.status = response.status;
+		error.retryAfterMs = parseRetryAfterMs(response.headers.get("Retry-After"));
+		throw error;
+	}
+
+	return (await response.json()) as T;
 }
 
 async function runSharedRequest<T>(
@@ -119,6 +160,7 @@ export function createClientPoller<T>(
 	let abortController: AbortController | null = null;
 	let inFlight: Promise<void> | null = null;
 	let failureCount = 0;
+	let retryAfterMs: number | null = null;
 
 	const clearTimer = () => {
 		if (!timer) return;
@@ -159,11 +201,17 @@ export function createClientPoller<T>(
 	};
 
 	const getNextDelay = () => {
-		if (failureCount === 0) return options.intervalMs;
-		return Math.min(
-			options.intervalMs * backoffMultiplier ** failureCount,
-			maxBackoffMs,
-		);
+		const defaultDelay =
+			failureCount === 0
+				? options.intervalMs
+				: Math.min(
+						options.intervalMs * backoffMultiplier ** failureCount,
+						maxBackoffMs,
+					);
+		if (retryAfterMs === null) return defaultDelay;
+		const nextDelay = Math.max(defaultDelay, retryAfterMs);
+		retryAfterMs = null;
+		return nextDelay;
 	};
 
 	const poll = (): Promise<void> => {
@@ -188,6 +236,7 @@ export function createClientPoller<T>(
 		)
 			.then(({ value, cached }) => {
 				failureCount = 0;
+				retryAfterMs = null;
 				options.onSuccess?.(value, {
 					cached,
 					sharedKey: options.sharedKey,
@@ -198,6 +247,7 @@ export function createClientPoller<T>(
 					return;
 				}
 				failureCount += 1;
+				retryAfterMs = getRetryAfterMs(error);
 				options.onError?.(error);
 			})
 			.finally(() => {

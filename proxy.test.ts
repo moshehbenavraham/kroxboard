@@ -80,6 +80,30 @@ describe("proxy", () => {
 		expect(res1.status).not.toBe(429);
 	});
 
+	it("does not count static asset requests against the API rate limit budget", () => {
+		const ip = `asset-bypass-test-${Date.now()}`;
+		for (let i = 0; i < 150; i++) {
+			const assetRequest = createMockRequest(
+				"http://localhost:3000/assets/platform-logos/discord.svg",
+				{
+					"cf-connecting-ip": ip,
+				},
+			);
+			const assetResponse = proxy(assetRequest);
+			expect(assetResponse.status).toBe(200);
+			expect(assetResponse.headers.get("X-RateLimit-Limit")).toBeNull();
+		}
+
+		const apiRequest = createMockRequest("http://localhost:3000/api/test", {
+			"cf-connecting-ip": ip,
+		});
+		const apiResponse = proxy(apiRequest);
+
+		expect(apiResponse.status).toBe(200);
+		expect(apiResponse.headers.get("X-RateLimit-Limit")).toBe("100");
+		expect(apiResponse.headers.get("X-RateLimit-Remaining")).toBe("99");
+	});
+
 	it("returns 429 when rate limit is exceeded", () => {
 		const ip = `ratelimit-test-${Date.now()}`;
 		for (let i = 0; i < 101; i++) {

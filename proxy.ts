@@ -6,6 +6,35 @@ import { NextResponse } from "next/server";
 const rateLimitMap = new Map<string, { count: number; lastReset: number }>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 100;
+const RATE_LIMIT_BYPASS_PATH_PREFIXES = [
+	"/_next/static",
+	"/_next/image",
+	"/assets/",
+];
+const RATE_LIMIT_BYPASS_EXACT_PATHS = new Set(["/favicon.ico", "/icon.png"]);
+const STATIC_ASSET_PATH_PATTERN =
+	/\.(?:avif|gif|ico|jpe?g|mp3|ogg|png|svg|txt|wav|webm|webp)$/i;
+
+function shouldBypassRateLimit(request: NextRequest): boolean {
+	if (request.method === "HEAD" || request.method === "OPTIONS") {
+		return true;
+	}
+
+	const { pathname } = request.nextUrl;
+	if (RATE_LIMIT_BYPASS_EXACT_PATHS.has(pathname)) {
+		return true;
+	}
+
+	if (
+		RATE_LIMIT_BYPASS_PATH_PREFIXES.some((prefix) =>
+			pathname.startsWith(prefix),
+		)
+	) {
+		return true;
+	}
+
+	return STATIC_ASSET_PATH_PATTERN.test(pathname);
+}
 
 export function proxy(request: NextRequest) {
 	const response = NextResponse.next();
@@ -51,6 +80,10 @@ export function proxy(request: NextRequest) {
 		.replace(/\s{2,}/g, " ")
 		.trim();
 	response.headers.set("Content-Security-Policy", csp);
+
+	if (shouldBypassRateLimit(request)) {
+		return response;
+	}
 
 	// 2. Rate Limiting (Basic)
 	// Using IP as the identifier. If behind Cloudflare, use CF-Connecting-IP
@@ -101,7 +134,7 @@ export function proxy(request: NextRequest) {
 
 export const config = {
 	matcher: [
-		// Apply to all API routes and pages, exclude static files and images
+		// Apply security headers broadly; static/public assets skip rate limiting in-code.
 		"/((?!_next/static|_next/image|favicon.ico|icon.png).*)",
 	],
 };

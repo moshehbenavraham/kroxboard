@@ -25,6 +25,7 @@ npm run build
 ```
 
 Next.js produces a standalone output in `.next/standalone/` suitable for Docker or direct Node.js execution.
+The `postbuild` step also syncs `.next/static/` and `public/` into the standalone tree so direct systemd launches serve the same hashed assets as the Docker image.
 
 ## Systemd (User Service, Non-Docker)
 

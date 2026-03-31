@@ -173,33 +173,32 @@ function PlatformBadge({
 		}
 	> = {
 		feishu: {
-			remoteLogoSrc: "https://cdn.simpleicons.org/lark/2E5BFF",
+			remoteLogoSrc: "/assets/platform-logos/feishu.svg?v=1",
 			logoFallbackSrc: "/assets/platform-logos/feishu-favicon.png?v=1",
 			badgeStyle:
 				"bg-blue-500/20 text-blue-300 border border-blue-500/30 hover:bg-blue-500/40 hover:border-blue-400",
 			logoSizeClass: "w-[1.09375rem] h-[1.09375rem]",
 		},
 		yuanbao: {
-			remoteLogoSrc:
-				"https://cdn-hybrid-prod.hunyuan.tencent.com/manual/favicon.png",
+			remoteLogoSrc: "/assets/platform-logos/yuanbao-favicon.png?v=1",
 			logoFallbackSrc: "/assets/platform-logos/yuanbao-favicon.png?v=1",
 			badgeStyle:
 				"bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/40 hover:border-cyan-400",
 		},
 		discord: {
-			remoteLogoSrc: "https://cdn.simpleicons.org/discord/5865F2",
+			remoteLogoSrc: "/assets/platform-logos/discord.svg?v=1",
 			logoFallbackSrc: "/assets/platform-logos/discord.svg",
 			badgeStyle:
 				"bg-purple-500/20 text-purple-300 border border-purple-500/30 hover:bg-purple-500/40 hover:border-purple-400",
 		},
 		telegram: {
-			remoteLogoSrc: "https://cdn.simpleicons.org/telegram/26A5E4",
+			remoteLogoSrc: "/assets/platform-logos/telegram.svg?v=1",
 			logoFallbackSrc: "/assets/platform-logos/telegram.svg",
 			badgeStyle:
 				"bg-sky-500/20 text-sky-300 border border-sky-500/30 hover:bg-sky-500/40 hover:border-sky-400",
 		},
 		whatsapp: {
-			remoteLogoSrc: "https://cdn.simpleicons.org/whatsapp/25D366",
+			remoteLogoSrc: "/assets/platform-logos/whatsapp.svg?v=1",
 			logoFallbackSrc: "/assets/platform-logos/whatsapp.svg",
 			badgeStyle:
 				"bg-green-500/20 text-green-300 border border-green-500/30 hover:bg-green-500/40 hover:border-green-400",

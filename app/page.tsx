@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { OperatorActionBanner } from "@/app/components/operator-action-banner";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
 import {
@@ -8,6 +8,7 @@ import {
 	readBoundedStorageRecord,
 	writeBoundedStorageRecord,
 } from "@/lib/client-persistence";
+import { createClientPoller, readPollJsonResponse } from "@/lib/client-polling";
 import { useI18n } from "@/lib/i18n";
 import {
 	createProtectedRequestBannerState,
@@ -119,6 +120,11 @@ interface AgentActivityData {
 	}>;
 }
 
+interface AgentStatusData {
+	agentId: string;
+	state: string;
+}
+
 type TFunc = (key: string) => string;
 
 let cachedHomeData: ConfigData | null = null;
@@ -130,6 +136,10 @@ let cachedHomeAgentStates: Record<string, string> = {};
 const DIAGNOSTIC_STORAGE_TTL_MS = 24 * 60 * 60 * 1000;
 const DIAGNOSTIC_STORAGE_MAX_BYTES = 48 * 1024;
 const DIAGNOSTIC_STORAGE_MAX_ENTRIES = 512;
+const HOME_AGENT_STATUS_POLL_INTERVAL_MS = 30000;
+const HOME_AGENT_STATUS_REUSE_RESULT_MS = 25000;
+const HOME_AGENT_ACTIVITY_POLL_INTERVAL_MS = 30000;
+const HOME_AGENT_ACTIVITY_REUSE_RESULT_MS = 25000;
 
 function getDiagnosticStorageOptions() {
 	return {
@@ -410,7 +420,6 @@ export default function Home() {
 	const [loading, setLoading] = useState(false);
 	const [allStats, setAllStats] = useState<AllStats | null>(cachedHomeAllStats);
 	const [statsRange, setStatsRange] = useState<TimeRange>("daily");
-	const timerRef = useRef<NodeJS.Timeout | null>(null);
 	const [testResults, setTestResults] = useState<Record<
 		string,
 		AgentModelTestResult | null
@@ -484,38 +493,69 @@ export default function Home() {
 		[runProtectedRequest],
 	);
 
-	const fetchData = useCallback((silent = false) => {
-		if (!silent) setLoading(true);
-		Promise.all([
-			fetch("/api/config").then((r) => r.json()),
-			fetch("/api/stats-all").then((r) => r.json()),
-		])
-			.then(([configData, statsData]) => {
-				if (configData.error) {
-					setError(configData.error);
-					cachedHomeError = configData.error;
-				} else {
-					setData(configData);
-					setError(null);
-					cachedHomeData = configData;
-					cachedHomeError = null;
-				}
-				if (!statsData.error) {
-					setAllStats(statsData);
-					cachedHomeAllStats = statsData;
-				}
-				const updated = new Date().toLocaleTimeString("zh-CN");
-				setLastUpdated(updated);
-				cachedHomeLastUpdated = updated;
-			})
-			.catch((e) => {
-				setError(e.message);
-				cachedHomeError = e.message;
-			})
-			.finally(() => {
-				if (!silent) setLoading(false);
-			});
+	const fetchDashboardConfig = useCallback(async (signal?: AbortSignal) => {
+		const response = await fetch("/api/config", {
+			cache: "no-store",
+			signal,
+		});
+		const data = await readPollJsonResponse<ConfigData & { error?: string }>(
+			response,
+		);
+		if (typeof data?.error === "string") {
+			throw new Error(data.error);
+		}
+		return data as ConfigData;
 	}, []);
+
+	const fetchAllStats = useCallback(async (signal?: AbortSignal) => {
+		const response = await fetch("/api/stats-all", {
+			cache: "no-store",
+			signal,
+		});
+		const data = await readPollJsonResponse<AllStats & { error?: string }>(
+			response,
+		);
+		if (typeof data?.error === "string") {
+			throw new Error(data.error);
+		}
+		return data as AllStats;
+	}, []);
+
+	const applyDashboardSnapshot = useCallback(
+		(configData: ConfigData, statsData: AllStats) => {
+			setData(configData);
+			setError(null);
+			cachedHomeData = configData;
+			cachedHomeError = null;
+			setAllStats(statsData);
+			cachedHomeAllStats = statsData;
+			const updated = new Date().toLocaleTimeString("zh-CN");
+			setLastUpdated(updated);
+			cachedHomeLastUpdated = updated;
+		},
+		[],
+	);
+
+	const fetchData = useCallback(
+		async (silent = false) => {
+			if (!silent) setLoading(true);
+			try {
+				const [configData, statsData] = await Promise.all([
+					fetchDashboardConfig(),
+					fetchAllStats(),
+				]);
+				applyDashboardSnapshot(configData, statsData);
+			} catch (error) {
+				const message =
+					error instanceof Error ? error.message : "Failed to load dashboard";
+				setError(message);
+				cachedHomeError = message;
+			} finally {
+				if (!silent) setLoading(false);
+			}
+		},
+		[applyDashboardSnapshot, fetchAllStats, fetchDashboardConfig],
+	);
 
 	const changeAgentModel = useCallback(
 		async (agentId: string, model: string) => {
@@ -810,48 +850,100 @@ export default function Home() {
 
 	// Refresh on the configured interval.
 	useEffect(() => {
-		if (timerRef.current) clearInterval(timerRef.current);
-		if (refreshInterval > 0) {
-			timerRef.current = setInterval(fetchData, refreshInterval * 1000);
-		}
+		if (refreshInterval <= 0) return;
+
+		const poller = createClientPoller<{
+			configData: ConfigData;
+			statsData: AllStats;
+		}>({
+			intervalMs: refreshInterval * 1000,
+			request: async (signal) => {
+				setLoading(true);
+				const [configData, statsData] = await Promise.all([
+					fetchDashboardConfig(signal),
+					fetchAllStats(signal),
+				]);
+				return { configData, statsData };
+			},
+			onSuccess: ({ configData, statsData }) => {
+				applyDashboardSnapshot(configData, statsData);
+				setLoading(false);
+			},
+			onError: (error) => {
+				const message =
+					error instanceof Error
+						? error.message
+						: "Failed to refresh dashboard";
+				setError(message);
+				cachedHomeError = message;
+				setLoading(false);
+			},
+		});
+
+		poller.start();
 		return () => {
-			if (timerRef.current) clearInterval(timerRef.current);
+			poller.stop();
 		};
-	}, [refreshInterval, fetchData]);
+	}, [
+		applyDashboardSnapshot,
+		fetchAllStats,
+		fetchDashboardConfig,
+		refreshInterval,
+	]);
 
 	// Poll agent status every 30 seconds.
 	useEffect(() => {
-		const fetchStatus = () => {
-			fetch("/api/agent-status")
-				.then((r) => r.json())
-				.then((d) => {
-					if (d.statuses) {
-						const map: Record<string, string> = {};
-						for (const s of d.statuses) map[s.agentId] = s.state;
-						setAgentStates(map);
-						cachedHomeAgentStates = map;
-					}
-				})
-				.catch(() => {});
+		const poller = createClientPoller<{ statuses?: AgentStatusData[] }>({
+			intervalMs: HOME_AGENT_STATUS_POLL_INTERVAL_MS,
+			immediate: true,
+			sharedKey: "agent-status",
+			reuseResultMs: HOME_AGENT_STATUS_REUSE_RESULT_MS,
+			request: async (signal) => {
+				const response = await fetch("/api/agent-status", {
+					cache: "no-store",
+					signal,
+				});
+				return readPollJsonResponse<{ statuses?: AgentStatusData[] }>(response);
+			},
+			onSuccess: (data) => {
+				const map: Record<string, string> = {};
+				for (const status of data.statuses || []) {
+					map[status.agentId] = status.state;
+				}
+				setAgentStates(map);
+				cachedHomeAgentStates = map;
+			},
+		});
+
+		poller.start();
+		return () => {
+			poller.stop();
 		};
-		fetchStatus();
-		const timer = setInterval(fetchStatus, 30000);
-		return () => clearInterval(timer);
 	}, []);
 
 	// Poll agent activity every 30 seconds.
 	useEffect(() => {
-		const fetchActivity = () => {
-			fetch("/api/agent-activity", { cache: "no-store" })
-				.then((r) => r.json())
-				.then((d) => {
-					if (d.agents) setAgentActivity(d.agents);
-				})
-				.catch(() => {});
+		const poller = createClientPoller<{ agents?: AgentActivityData[] }>({
+			intervalMs: HOME_AGENT_ACTIVITY_POLL_INTERVAL_MS,
+			immediate: true,
+			sharedKey: "agent-activity",
+			reuseResultMs: HOME_AGENT_ACTIVITY_REUSE_RESULT_MS,
+			request: async (signal) => {
+				const response = await fetch("/api/agent-activity", {
+					cache: "no-store",
+					signal,
+				});
+				return readPollJsonResponse<{ agents?: AgentActivityData[] }>(response);
+			},
+			onSuccess: (data) => {
+				setAgentActivity(data.agents || []);
+			},
+		});
+
+		poller.start();
+		return () => {
+			poller.stop();
 		};
-		fetchActivity();
-		const timer = setInterval(fetchActivity, 30000);
-		return () => clearInterval(timer);
 	}, []);
 
 	if (error && !data) {

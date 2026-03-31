@@ -9,7 +9,7 @@ import {
 	readBoundedStorageValue,
 	writeBoundedStorageValue,
 } from "@/lib/client-persistence";
-import { createClientPoller } from "@/lib/client-polling";
+import { createClientPoller, readPollJsonResponse } from "@/lib/client-polling";
 import { buildGatewayHomeLaunchPath } from "@/lib/gateway-launch";
 import { useI18n } from "@/lib/i18n";
 import {
@@ -353,8 +353,12 @@ const CODE_SNIPPET_LIFETIME_SEC = 5.5;
 const SRE_BLACKWORD_MAX_FLOAT_DIST_PX = 320;
 const FLOATING_TICK_INTERVAL_DESKTOP_MS = 48;
 const FLOATING_TICK_INTERVAL_MOBILE_MS = 32;
-const AGENT_ACTIVITY_POLL_INTERVAL_MS = 1000;
-const GATEWAY_HEALTH_POLL_INTERVAL_MS = 10000;
+const AGENT_ACTIVITY_POLL_INTERVAL_MS = 10000;
+const AGENT_ACTIVITY_REUSE_RESULT_MS = 8000;
+const PIXEL_OFFICE_CONFIG_POLL_INTERVAL_MS = 30000;
+const PIXEL_OFFICE_CONFIG_REUSE_RESULT_MS = 25000;
+const GATEWAY_HEALTH_POLL_INTERVAL_MS = 30000;
+const GATEWAY_HEALTH_REUSE_RESULT_MS = 25000;
 const GATEWAY_DEGRADED_LATENCY_MS = 1500;
 const GATEWAY_SRE_DOWN_FAIL_THRESHOLD = 2;
 const GATEWAY_SRE_DEGRADED_THRESHOLD = 2;
@@ -624,7 +628,7 @@ export default function PixelOfficePage() {
 	const refreshGatewayHealthSnapshot = useCallback(async () => {
 		try {
 			const res = await fetch("/api/gateway-health", { cache: "no-store" });
-			const data = await res.json();
+			const data = await readPollJsonResponse<any>(res);
 			applyGatewayHealthSnapshot(data);
 		} catch {
 			applyGatewayHealthSnapshot(null);
@@ -1106,183 +1110,210 @@ export default function PixelOfficePage() {
 				);
 			}
 		}
-		const fetchAgents = async () => {
-			try {
-				const res = await fetch("/api/agent-activity", { cache: "no-store" });
-				const data = await res.json();
-				const newAgents: AgentActivity[] = data.agents || [];
-				setAgents(newAgents);
-				cachedAgents = newAgents;
+		const applyAgentActivitySnapshot = (newAgents: AgentActivity[]) => {
+			setAgents(newAgents);
+			cachedAgents = newAgents;
 
-				const office = officeRef.current;
-				if (office && officeReadyRef.current) {
-					syncAgentsToOffice(
-						newAgents,
-						office,
-						agentIdMapRef.current,
-						nextIdRef.current,
-					);
-					cachedAgentIdMap = new Map(agentIdMapRef.current);
-					cachedNextCharacterId = nextIdRef.current.current;
+			const office = officeRef.current;
+			if (office && officeReadyRef.current) {
+				syncAgentsToOffice(
+					newAgents,
+					office,
+					agentIdMapRef.current,
+					nextIdRef.current,
+				);
+				cachedAgentIdMap = new Map(agentIdMapRef.current);
+				cachedNextCharacterId = nextIdRef.current.current;
 
-					const seen = seenSubagentEventKeysRef.current;
-					const now = Date.now();
-					for (const [key, ts] of seen.entries()) {
-						if (now - ts > 24 * 60 * 60 * 1000) seen.delete(key);
-					}
-					for (const agent of newAgents) {
-						const parentCharId = agentIdMapRef.current.get(agent.agentId);
-						if (typeof parentCharId !== "number") continue;
-						if (!agent.subagents?.length) continue;
-						for (const sub of agent.subagents) {
-							if (!sub.activityEvents?.length) continue;
-							const subKey = sub.sessionKey
-								? `${sub.sessionKey}::${sub.toolId}`
-								: sub.toolId;
-							const subCharId = office.getSubagentId(parentCharId, subKey);
-							if (subCharId == null) continue;
-
-							const orderedEvents = (sub.activityEvents || [])
-								.slice()
-								.sort((a, b) => a.at - b.at);
-							let emittedNew = false;
-							for (const event of orderedEvents) {
-								const uniq = `${agent.agentId}:${subKey}:${event.key}`;
-								if (seen.has(uniq)) continue;
-								seen.set(uniq, now);
-								office.pushCodeSnippet(subCharId, event.text);
-								emittedNew = true;
-							}
-
-							// Fallback: if no parsed activity events yet, show subagent task label once.
-							if (!emittedNew && orderedEvents.length === 0 && sub.label) {
-								const fallbackUniq = `${agent.agentId}:${subKey}:label`;
-								if (!seen.has(fallbackUniq)) {
-									seen.set(fallbackUniq, now);
-									office.pushCodeSnippet(subCharId, `task: ${sub.label}`);
-								}
-							}
-						}
-					}
+				const seen = seenSubagentEventKeysRef.current;
+				const now = Date.now();
+				for (const [key, ts] of seen.entries()) {
+					if (now - ts > 24 * 60 * 60 * 1000) seen.delete(key);
 				}
-
-				// Play sound when agent transitions to waiting
 				for (const agent of newAgents) {
-					const prev = prevAgentStatesRef.current.get(agent.agentId);
-					if (agent.state === "waiting" && prev && prev !== "waiting") {
-						playDoneSound();
-					}
-					// Broadcast notification on meaningful state transitions
-					if (prev && prev !== agent.state) {
-						if (agent.state === "working" && prev !== "working") {
-							const bid = Date.now() + Math.random();
-							setBroadcasts((b) => [
-								...b,
-								{
-									id: bid,
-									emoji: agent.emoji,
-									text: `${agent.emoji} ${agent.name} ${t("pixelOffice.broadcast.online")}`,
-								},
-							]);
-							setTimeout(
-								() => setBroadcasts((b) => b.filter((x) => x.id !== bid)),
-								5000,
-							);
-						} else if (agent.state === "offline" && prev === "working") {
-							const bid = Date.now() + Math.random();
-							setBroadcasts((b) => [
-								...b,
-								{
-									id: bid,
-									emoji: agent.emoji,
-									text: `${agent.emoji} ${agent.name} ${t("pixelOffice.broadcast.offline")}`,
-								},
-							]);
-							setTimeout(
-								() => setBroadcasts((b) => b.filter((x) => x.id !== bid)),
-								5000,
-							);
+					const parentCharId = agentIdMapRef.current.get(agent.agentId);
+					if (typeof parentCharId !== "number") continue;
+					if (!agent.subagents?.length) continue;
+					for (const sub of agent.subagents) {
+						if (!sub.activityEvents?.length) continue;
+						const subKey = sub.sessionKey
+							? `${sub.sessionKey}::${sub.toolId}`
+							: sub.toolId;
+						const subCharId = office.getSubagentId(parentCharId, subKey);
+						if (subCharId == null) continue;
+
+						const orderedEvents = (sub.activityEvents || [])
+							.slice()
+							.sort((a, b) => a.at - b.at);
+						let emittedNew = false;
+						for (const event of orderedEvents) {
+							const uniq = `${agent.agentId}:${subKey}:${event.key}`;
+							if (seen.has(uniq)) continue;
+							seen.set(uniq, now);
+							office.pushCodeSnippet(subCharId, event.text);
+							emittedNew = true;
+						}
+
+						// Fallback: if no parsed activity events yet, show subagent task label once.
+						if (!emittedNew && orderedEvents.length === 0 && sub.label) {
+							const fallbackUniq = `${agent.agentId}:${subKey}:label`;
+							if (!seen.has(fallbackUniq)) {
+								seen.set(fallbackUniq, now);
+								office.pushCodeSnippet(subCharId, `task: ${sub.label}`);
+							}
 						}
 					}
 				}
-				const stateMap = new Map<string, string>();
-				for (const a of newAgents) stateMap.set(a.agentId, a.state);
-				prevAgentStatesRef.current = stateMap;
-				cachedPrevAgentStates = new Map(stateMap);
-			} catch (e) {
-				console.error("Failed to fetch agents:", e);
 			}
+
+			// Play sound when agent transitions to waiting
+			for (const agent of newAgents) {
+				const prev = prevAgentStatesRef.current.get(agent.agentId);
+				if (agent.state === "waiting" && prev && prev !== "waiting") {
+					playDoneSound();
+				}
+				// Broadcast notification on meaningful state transitions
+				if (prev && prev !== agent.state) {
+					if (agent.state === "working" && prev !== "working") {
+						const bid = Date.now() + Math.random();
+						setBroadcasts((b) => [
+							...b,
+							{
+								id: bid,
+								emoji: agent.emoji,
+								text: `${agent.emoji} ${agent.name} ${t("pixelOffice.broadcast.online")}`,
+							},
+						]);
+						setTimeout(
+							() => setBroadcasts((b) => b.filter((x) => x.id !== bid)),
+							5000,
+						);
+					} else if (agent.state === "offline" && prev === "working") {
+						const bid = Date.now() + Math.random();
+						setBroadcasts((b) => [
+							...b,
+							{
+								id: bid,
+								emoji: agent.emoji,
+								text: `${agent.emoji} ${agent.name} ${t("pixelOffice.broadcast.offline")}`,
+							},
+						]);
+						setTimeout(
+							() => setBroadcasts((b) => b.filter((x) => x.id !== bid)),
+							5000,
+						);
+					}
+				}
+			}
+			const stateMap = new Map<string, string>();
+			for (const agent of newAgents) stateMap.set(agent.agentId, agent.state);
+			prevAgentStatesRef.current = stateMap;
+			cachedPrevAgentStates = new Map(stateMap);
 		};
-		fetchAgents();
-		const interval = setInterval(fetchAgents, AGENT_ACTIVITY_POLL_INTERVAL_MS);
-		return () => clearInterval(interval);
+
+		const poller = createClientPoller<{ agents?: AgentActivity[] }>({
+			intervalMs: AGENT_ACTIVITY_POLL_INTERVAL_MS,
+			immediate: true,
+			sharedKey: "agent-activity",
+			reuseResultMs: AGENT_ACTIVITY_REUSE_RESULT_MS,
+			request: async (signal) => {
+				const response = await fetch("/api/agent-activity", {
+					cache: "no-store",
+					signal,
+				});
+				return readPollJsonResponse<{ agents?: AgentActivity[] }>(response);
+			},
+			onSuccess: (data) => {
+				applyAgentActivitySnapshot(data.agents || []);
+			},
+		});
+
+		poller.start();
+		return () => {
+			poller.stop();
+		};
 	}, [t]);
 
 	// Poll agent session stats from /api/config
 	useEffect(() => {
-		const fetchStats = async () => {
-			try {
-				const res = await fetch("/api/config");
-				const data = await res.json();
-				const map = new Map<
-					string,
-					{
-						sessionCount: number;
-						messageCount: number;
-						totalTokens: number;
-						todayAvgResponseMs: number;
-						weeklyResponseMs: number[];
-						weeklyTokens: number[];
-						lastActive: number | null;
-					}
-				>();
-				const configMap = new Map<string, ConfigAgentCard>();
-				for (const agent of data.agents || []) {
-					configMap.set(agent.id, {
-						id: agent.id,
-						name: agent.name || agent.id,
-						emoji: agent.emoji || "Bot",
-						model: agent.model || "",
-						launchPath: agent.launchPath,
-						platforms: Array.isArray(agent.platforms) ? agent.platforms : [],
-						session: agent.session || undefined,
+		const applyConfigSnapshot = (data: any) => {
+			const map = new Map<
+				string,
+				{
+					sessionCount: number;
+					messageCount: number;
+					totalTokens: number;
+					todayAvgResponseMs: number;
+					weeklyResponseMs: number[];
+					weeklyTokens: number[];
+					lastActive: number | null;
+				}
+			>();
+			const configMap = new Map<string, ConfigAgentCard>();
+			for (const agent of data.agents || []) {
+				configMap.set(agent.id, {
+					id: agent.id,
+					name: agent.name || agent.id,
+					emoji: agent.emoji || "Bot",
+					model: agent.model || "",
+					launchPath: agent.launchPath,
+					platforms: Array.isArray(agent.platforms) ? agent.platforms : [],
+					session: agent.session || undefined,
+				});
+				if (agent.session) {
+					map.set(agent.id, {
+						sessionCount: agent.session.sessionCount || 0,
+						messageCount: agent.session.messageCount || 0,
+						totalTokens: agent.session.totalTokens || 0,
+						todayAvgResponseMs: agent.session.todayAvgResponseMs || 0,
+						weeklyResponseMs: agent.session.weeklyResponseMs || [],
+						weeklyTokens: agent.session.weeklyTokens || [],
+						lastActive: agent.session.lastActive || null,
 					});
-					if (agent.session) {
-						map.set(agent.id, {
-							sessionCount: agent.session.sessionCount || 0,
-							messageCount: agent.session.messageCount || 0,
-							totalTokens: agent.session.totalTokens || 0,
-							todayAvgResponseMs: agent.session.todayAvgResponseMs || 0,
-							weeklyResponseMs: agent.session.weeklyResponseMs || [],
-							weeklyTokens: agent.session.weeklyTokens || [],
-							lastActive: agent.session.lastActive || null,
-						});
+				}
+			}
+			agentStatsRef.current = map;
+			configAgentsRef.current = configMap;
+			if (typeof data.gateway?.launchPath === "string") {
+				gatewayLaunchPathRef.current = data.gateway.launchPath;
+			}
+			if (data.providers) {
+				providersRef.current = data.providers;
+				const accessModeMap: Record<string, "auth" | "api_key"> = {};
+				for (const provider of data.providers) {
+					if (
+						provider?.id &&
+						(provider.accessMode === "auth" ||
+							provider.accessMode === "api_key")
+					) {
+						accessModeMap[provider.id] = provider.accessMode;
 					}
 				}
-				agentStatsRef.current = map;
-				configAgentsRef.current = configMap;
-				if (typeof data.gateway?.launchPath === "string") {
-					gatewayLaunchPathRef.current = data.gateway.launchPath;
-				}
-				if (data.providers) {
-					providersRef.current = data.providers;
-					const accessModeMap: Record<string, "auth" | "api_key"> = {};
-					for (const provider of data.providers) {
-						if (
-							provider?.id &&
-							(provider.accessMode === "auth" ||
-								provider.accessMode === "api_key")
-						) {
-							accessModeMap[provider.id] = provider.accessMode;
-						}
-					}
-					providerAccessModeRef.current = accessModeMap;
-				}
-			} catch {}
+				providerAccessModeRef.current = accessModeMap;
+			}
 		};
-		fetchStats();
-		const interval = setInterval(fetchStats, 30000);
-		return () => clearInterval(interval);
+
+		const poller = createClientPoller<any>({
+			intervalMs: PIXEL_OFFICE_CONFIG_POLL_INTERVAL_MS,
+			immediate: true,
+			sharedKey: "pixel-office-config",
+			reuseResultMs: PIXEL_OFFICE_CONFIG_REUSE_RESULT_MS,
+			request: async (signal) => {
+				const response = await fetch("/api/config", {
+					cache: "no-store",
+					signal,
+				});
+				return readPollJsonResponse<any>(response);
+			},
+			onSuccess: (data) => {
+				applyConfigSnapshot(data);
+			},
+		});
+
+		poller.start();
+		return () => {
+			poller.stop();
+		};
 	}, []);
 
 	// Poll gateway health for server alarm lamp in Pixel Office
@@ -1291,13 +1322,13 @@ export default function PixelOfficePage() {
 			intervalMs: GATEWAY_HEALTH_POLL_INTERVAL_MS,
 			immediate: true,
 			sharedKey: "gateway-health",
-			reuseResultMs: 5_000,
+			reuseResultMs: GATEWAY_HEALTH_REUSE_RESULT_MS,
 			request: async (signal) => {
 				const response = await fetch("/api/gateway-health", {
 					cache: "no-store",
 					signal,
 				});
-				return response.json();
+				return readPollJsonResponse<any>(response);
 			},
 			onSuccess: (data) => {
 				applyGatewayHealthSnapshot(data);

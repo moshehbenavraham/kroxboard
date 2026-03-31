@@ -3,13 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { createClientPoller } from "@/lib/client-polling";
+import { createClientPoller, readPollJsonResponse } from "@/lib/client-polling";
 import { LanguageSwitcher, useI18n } from "@/lib/i18n";
 import { ThemeSwitcher } from "@/lib/theme";
 
 const BUGS_ENABLED_KEY = "pixel-office-bugs-enabled";
 const BUGS_COUNT_KEY = "pixel-office-bugs-count";
 const BUGS_MAX = 400;
+const SIDEBAR_AGENT_COUNT_POLL_INTERVAL_MS = 30000;
+const SIDEBAR_AGENT_COUNT_REUSE_RESULT_MS = 25000;
+const GATEWAY_HEALTH_POLL_INTERVAL_MS = 30000;
+const GATEWAY_HEALTH_REUSE_RESULT_MS = 25000;
 
 type NavIconName =
 	| "agents"
@@ -510,42 +514,44 @@ export function Sidebar() {
 	}, [mobileMenuOpen]);
 
 	useEffect(() => {
-		let aborted = false;
-		const fetchAgentCount = async () => {
-			try {
-				const res = await fetch("/api/config", { cache: "no-store" });
-				if (!res.ok) return;
-				const data = await res.json();
-				if (aborted) return;
+		if (pathname !== "/") return;
+
+		const poller = createClientPoller<{ agents?: unknown[] }>({
+			intervalMs: SIDEBAR_AGENT_COUNT_POLL_INTERVAL_MS,
+			immediate: true,
+			sharedKey: "sidebar-agent-count",
+			reuseResultMs: SIDEBAR_AGENT_COUNT_REUSE_RESULT_MS,
+			request: async (signal) => {
+				const response = await fetch("/api/config", {
+					cache: "no-store",
+					signal,
+				});
+				return readPollJsonResponse<{ agents?: unknown[] }>(response);
+			},
+			onSuccess: (data) => {
 				const count = Array.isArray(data?.agents) ? data.agents.length : 0;
 				setMobileAgentCount(count);
-			} catch {}
-		};
-		if (pathname === "/") {
-			void fetchAgentCount();
-			const timer = setInterval(fetchAgentCount, 30000);
-			return () => {
-				aborted = true;
-				clearInterval(timer);
-			};
-		}
+			},
+		});
+
+		poller.start();
 		return () => {
-			aborted = true;
+			poller.stop();
 		};
 	}, [pathname]);
 
 	useEffect(() => {
 		const poller = createClientPoller<{ openclawVersion?: string }>({
-			intervalMs: 10_000,
+			intervalMs: GATEWAY_HEALTH_POLL_INTERVAL_MS,
 			immediate: true,
 			sharedKey: "gateway-health",
-			reuseResultMs: 5_000,
+			reuseResultMs: GATEWAY_HEALTH_REUSE_RESULT_MS,
 			request: async (signal) => {
 				const response = await fetch("/api/gateway-health", {
 					cache: "no-store",
 					signal,
 				});
-				return response.json();
+				return readPollJsonResponse<{ openclawVersion?: string }>(response);
 			},
 			onSuccess: (data) => {
 				const version =

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MAX_ANALYTICS_SESSION_FILE_BYTES } from "@/lib/openclaw-analytics";
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -107,7 +108,7 @@ describe("GET /api/stats/[agentId]", () => {
 		fs.mkdirSync(sessionsDir, { recursive: true });
 		fs.writeFileSync(
 			path.join(sessionsDir, "oversize.jsonl"),
-			"x".repeat(1_048_577),
+			"x".repeat(MAX_ANALYTICS_SESSION_FILE_BYTES + 1),
 		);
 
 		const route = await import("./route");
