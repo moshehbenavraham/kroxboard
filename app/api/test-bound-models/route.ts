@@ -7,7 +7,12 @@ import {
 	probeModel,
 } from "@/lib/model-probe";
 import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
-import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
+import {
+	applyDiagnosticRateLimitHeaders,
+	enforceDiagnosticRateLimit,
+} from "@/lib/security/diagnostic-rate-limit";
+import { requireFeatureFlag } from "@/lib/security/feature-flags";
+import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
 
 const CONFIG_PATH = OPENCLAW_CONFIG_PATH;
 const PROBE_TIMEOUT_MS = DEFAULT_MODEL_PROBE_TIMEOUT_MS;
@@ -34,8 +39,14 @@ function loadAgentList(config: any): AgentConfig[] {
 }
 
 export async function POST(request: Request) {
-	const access = requireSensitiveRouteAccess(request);
+	const access = requireSensitiveMutationAccess(request, {
+		allowedMethods: ["POST"],
+	});
 	if (!access.ok) return access.response;
+	const feature = requireFeatureFlag("ENABLE_PROVIDER_PROBES");
+	if (!feature.ok) return feature.response;
+	const rateLimit = enforceDiagnosticRateLimit(request, "provider_probe_batch");
+	if (!rateLimit.ok) return rateLimit.response;
 
 	try {
 		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
@@ -104,15 +115,17 @@ export async function POST(request: Request) {
 			};
 		});
 
-		return NextResponse.json({ results });
-	} catch (err: unknown) {
-		return NextResponse.json(
-			{ error: err instanceof Error ? err.message : String(err) },
-			{ status: 500 },
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json({ results }),
+			rateLimit.metadata,
+		);
+	} catch (_err: unknown) {
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json(
+				{ error: "Bound model diagnostics failed" },
+				{ status: 500 },
+			),
+			rateLimit.metadata,
 		);
 	}
-}
-
-export async function GET(request: Request) {
-	return POST(request);
 }

@@ -1,9 +1,9 @@
 # PRD Phase 00: Foundation
 
-**Status**: In Progress
+**Status**: Complete
 **Sessions**: 3 (initial estimate)
 **Estimated Duration**: 2-4 days
-**Progress**: 1/3 sessions (33%)
+**Progress**: 3/3 sessions (100%)
 
 ---
 
@@ -20,22 +20,22 @@ side effects while preserving the read-only operator value of the product.
 | Session | Name | Status | Est. Tasks | Validated |
 |---------|------|--------|------------|-----------|
 | 01 | Auth and operator elevation foundation | Complete | ~15-20 | 2026-03-31 |
-| 02 | Secret containment and token-free operator flows | Not Started | ~15-20 | - |
-| 03 | Safe defaults and deployment baseline | Not Started | ~12-18 | - |
+| 02 | Secret containment and token-free operator flows | Complete | ~15-20 | 2026-03-31 |
+| 03 | Safe defaults and deployment baseline | Complete | ~12-18 | 2026-03-31 |
 
 ---
 
 ## Completed Sessions
 
 - Session 01: Auth and operator elevation foundation completed on 2026-03-31.
+- Session 02: Secret containment and token-free operator flows completed on 2026-03-31.
+- Session 03: Safe defaults and deployment baseline completed on 2026-03-31.
 
 ---
 
 ## Upcoming Sessions
 
-- Session 01: Auth and operator elevation foundation
-- Session 02: Secret containment and token-free operator flows
-- Session 03: Safe defaults and deployment baseline
+- None. Phase 00 is complete.
 
 ---
 
@@ -92,11 +92,11 @@ server-side controls.
 ## Success Criteria
 
 Phase complete when:
-- [ ] All 3 sessions completed
+- [x] All 3 sessions completed
 - [x] Sensitive route auth and operator elevation baseline exists
-- [ ] `gateway.token` and equivalent secrets are removed from browser-visible
+- [x] `gateway.token` and equivalent secrets are removed from browser-visible
       flows
-- [ ] Side effects default to disabled and deployment guidance matches the
+- [x] Side effects default to disabled and deployment guidance matches the
       hardened model
 
 ---

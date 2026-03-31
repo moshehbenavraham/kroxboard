@@ -1,9 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import {
+	isValidOpenclawAgentId,
+	OPENCLAW_CONFIG_PATH,
+	OPENCLAW_HOME,
+	resolveOpenclawAgentSessionsFile,
+} from "@/lib/openclaw-paths";
 import { shouldHidePlatformChannel } from "@/lib/platforms";
-import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
+import {
+	applyDiagnosticRateLimitHeaders,
+	enforceDiagnosticRateLimit,
+} from "@/lib/security/diagnostic-rate-limit";
+import { requireFeatureFlag } from "@/lib/security/feature-flags";
+import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
 import {
 	parseApiJsonSafely,
 	shouldFallbackToCli,
@@ -21,34 +31,42 @@ interface DmSessionResult {
 	elapsed: number;
 }
 
-function getDmUser(agentId: string, platform: string): string | null {
+function readAgentSessions(agentId: string): Record<string, unknown> | null {
+	const sessionsPath = resolveOpenclawAgentSessionsFile(agentId);
+	if (!sessionsPath || !fs.existsSync(sessionsPath)) return null;
+
 	try {
-		const sessionsPath = path.join(
-			OPENCLAW_HOME,
-			`agents/${agentId}/sessions/sessions.json`,
-		);
 		const raw = fs.readFileSync(sessionsPath, "utf-8");
-		const sessions = JSON.parse(raw);
-		let bestId: string | null = null;
-		let bestTime = 0;
-		const pattern =
-			platform === "feishu"
-				? /^agent:[^:]+:feishu:direct:(ou_[a-f0-9]+)$/
-				: new RegExp(`^agent:[^:]+:${platform}:direct:(.+)$`);
-		for (const [key, val] of Object.entries(sessions)) {
-			const m = key.match(pattern);
-			if (m) {
-				const updatedAt = (val as any).updatedAt || 0;
-				if (updatedAt > bestTime) {
-					bestTime = updatedAt;
-					bestId = m[1];
-				}
-			}
-		}
-		return bestId;
+		const parsed = JSON.parse(raw);
+		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+			? (parsed as Record<string, unknown>)
+			: null;
 	} catch {
 		return null;
 	}
+}
+
+function getDmUser(agentId: string, platform: string): string | null {
+	const sessions = readAgentSessions(agentId);
+	if (!sessions) return null;
+
+	let bestId: string | null = null;
+	let bestTime = 0;
+	const pattern =
+		platform === "feishu"
+			? /^agent:[^:]+:feishu:direct:(ou_[a-f0-9]+)$/
+			: new RegExp(`^agent:[^:]+:${platform}:direct:(.+)$`);
+	for (const [key, val] of Object.entries(sessions)) {
+		const m = key.match(pattern);
+		if (m) {
+			const updatedAt = (val as any).updatedAt || 0;
+			if (updatedAt > bestTime) {
+				bestTime = updatedAt;
+				bestId = m[1];
+			}
+		}
+	}
+	return bestId;
 }
 
 async function testDmSession(
@@ -131,8 +149,17 @@ async function testDmSession(
 }
 
 export async function POST(request: Request) {
-	const access = requireSensitiveRouteAccess(request);
+	const access = requireSensitiveMutationAccess(request, {
+		allowedMethods: ["POST"],
+	});
 	if (!access.ok) return access.response;
+	const feature = requireFeatureFlag("ENABLE_OUTBOUND_TESTS");
+	if (!feature.ok) return feature.response;
+	const rateLimit = enforceDiagnosticRateLimit(
+		request,
+		"dm_session_diagnostic_batch",
+	);
+	if (!rateLimit.ok) return rateLimit.response;
 
 	try {
 		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
@@ -142,13 +169,25 @@ export async function POST(request: Request) {
 		const channels = config.channels || {};
 		const bindings = config.bindings || [];
 
-		let agentList = config.agents?.list || [];
+		let agentList = Array.isArray(config.agents?.list)
+			? config.agents.list.filter(
+					(agent: any) =>
+						agent &&
+						typeof agent.id === "string" &&
+						isValidOpenclawAgentId(agent.id.trim()),
+				)
+			: [];
 		if (agentList.length === 0) {
 			try {
 				const agentsDir = path.join(OPENCLAW_HOME, "agents");
 				const dirs = fs.readdirSync(agentsDir, { withFileTypes: true });
 				agentList = dirs
-					.filter((d: any) => d.isDirectory() && !d.name.startsWith("."))
+					.filter(
+						(d: any) =>
+							d.isDirectory() &&
+							!d.name.startsWith(".") &&
+							isValidOpenclawAgentId(d.name),
+					)
 					.map((d: any) => ({ id: d.name }));
 			} catch {}
 			if (agentList.length === 0) agentList = [{ id: "main" }];
@@ -204,12 +243,14 @@ export async function POST(request: Request) {
 			}
 		}
 
-		return NextResponse.json({ results });
-	} catch (err: any) {
-		return NextResponse.json({ error: err.message }, { status: 500 });
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json({ results }),
+			rateLimit.metadata,
+		);
+	} catch (_err: any) {
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json({ error: "DM diagnostics failed" }, { status: 500 }),
+			rateLimit.metadata,
+		);
 	}
-}
-
-export async function GET(request: Request) {
-	return POST(request);
 }

@@ -2,6 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import {
+	applyDiagnosticRateLimitHeaders,
+	enforceDiagnosticRateLimit,
+} from "@/lib/security/diagnostic-rate-limit";
 
 // Server-side cache: 5 min TTL
 let cache: {
@@ -66,7 +70,7 @@ function buildHeatmapData() {
 				);
 				const hour = shanghai.getHours();
 				const jsDay = shanghai.getDay(); // 0=Sun
-				const dayOfWeek = jsDay === 0 ? 6 : jsDay - 1; // 0=Mon … 6=Sun
+				const dayOfWeek = jsDay === 0 ? 6 : jsDay - 1; // 0=Mon ... 6=Sun
 				grid[dayOfWeek][hour]++;
 			}
 		}
@@ -78,22 +82,35 @@ function buildHeatmapData() {
 }
 
 /**
- * Per-agent message activity grids: 7×24 (dayOfWeek × hour).
- * dayOfWeek: 0=Monday … 6=Sunday, hour: 0-23 in Asia/Shanghai timezone.
+ * Per-agent message activity grids: 7x24 (dayOfWeek x hour).
+ * dayOfWeek: 0=Monday ... 6=Sunday, hour: 0-23 in Asia/Shanghai timezone.
  * Cached for 5 minutes server-side.
  */
-export async function GET() {
+export async function GET(request: Request) {
+	const rateLimit = enforceDiagnosticRateLimit(request, "activity_heatmap");
+	if (!rateLimit.ok) return rateLimit.response;
+
 	try {
 		if (cache && Date.now() - cache.ts < CACHE_TTL) {
-			return NextResponse.json(cache.data);
+			return applyDiagnosticRateLimitHeaders(
+				NextResponse.json(cache.data),
+				rateLimit.metadata,
+			);
 		}
 		const data = buildHeatmapData();
 		cache = { data, ts: Date.now() };
-		return NextResponse.json(data);
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json(data),
+			rateLimit.metadata,
+		);
 	} catch (err: unknown) {
-		return NextResponse.json(
-			{ error: err instanceof Error ? err.message : String(err) },
-			{ status: 500 },
+		console.error("[activity-heatmap] failed", err);
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json(
+				{ error: "Activity heatmap generation failed" },
+				{ status: 500 },
+			),
+			rateLimit.metadata,
 		);
 	}
 }

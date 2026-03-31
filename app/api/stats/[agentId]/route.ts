@@ -1,7 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import { resolveOpenclawAgentSessionsDir } from "@/lib/openclaw-paths";
+import {
+	createInvalidRequestBoundaryResponse,
+	validateAgentId,
+} from "@/lib/security/request-boundary";
 
 interface DayStat {
 	date: string; // YYYY-MM-DD
@@ -13,8 +17,7 @@ interface DayStat {
 	responseTimes: number[]; // internal, stripped before response
 }
 
-function parseSessions(agentId: string): Omit<DayStat, "responseTimes">[] {
-	const sessionsDir = path.join(OPENCLAW_HOME, `agents/${agentId}/sessions`);
+function parseSessions(sessionsDir: string): Omit<DayStat, "responseTimes">[] {
 	const dayMap: Record<string, DayStat> = {};
 
 	// Find all JSONL files (skip deleted ones)
@@ -85,7 +88,7 @@ function parseSessions(agentId: string): Omit<DayStat, "responseTimes">[] {
 			}
 		}
 
-		// Calculate response times: user msg → next assistant msg with stopReason=stop
+		// Calculate response times: user msg -> next assistant msg with stopReason=stop
 		for (let i = 0; i < messages.length; i++) {
 			if (messages[i].role !== "user") continue;
 			for (let j = i + 1; j < messages.length; j++) {
@@ -138,8 +141,24 @@ export async function GET(
 	{ params }: { params: Promise<{ agentId: string }> },
 ) {
 	try {
-		const { agentId } = await params;
-		const daily = parseSessions(agentId);
+		const { agentId: rawAgentId } = await params;
+		const agentId = validateAgentId(rawAgentId);
+		if (!agentId.ok) {
+			return createInvalidRequestBoundaryResponse(agentId.error);
+		}
+
+		const sessionsDir = resolveOpenclawAgentSessionsDir(agentId.value);
+		if (!sessionsDir) {
+			return createInvalidRequestBoundaryResponse({
+				ok: false,
+				type: "invalid_request_boundary",
+				field: "agentId",
+				reason: "invalid_format",
+				message: "Invalid agentId",
+			});
+		}
+
+		const daily = parseSessions(sessionsDir);
 
 		// Aggregate weekly and monthly
 		const weekMap: Record<string, Omit<DayStat, "responseTimes">> = {};
@@ -189,7 +208,7 @@ export async function GET(
 		}
 
 		return NextResponse.json({
-			agentId,
+			agentId: agentId.value,
 			daily,
 			weekly: Object.values(weekMap).sort((a, b) =>
 				a.date.localeCompare(b.date),
@@ -198,9 +217,9 @@ export async function GET(
 				a.date.localeCompare(b.date),
 			),
 		});
-	} catch (err: unknown) {
+	} catch {
 		return NextResponse.json(
-			{ error: err instanceof Error ? err.message : String(err) },
+			{ error: "Unable to load stats" },
 			{ status: 500 },
 		);
 	}

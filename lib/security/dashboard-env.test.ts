@@ -39,4 +39,69 @@ describe("parseDashboardAuthEnv", () => {
 			} as NodeJS.ProcessEnv),
 		).toThrow(DashboardEnvError);
 	});
+
+	it("throws for non-integer session hours", () => {
+		expect(() =>
+			parseDashboardAuthEnv({
+				...BASE_ENV,
+				DASHBOARD_CF_ACCESS_SESSION_HOURS: "2.5",
+			} as NodeJS.ProcessEnv),
+		).toThrow(DashboardEnvError);
+	});
+
+	it("throws when operator cookie secret is too short", () => {
+		expect(() =>
+			parseDashboardAuthEnv({
+				...BASE_ENV,
+				DASHBOARD_OPERATOR_COOKIE_SECRET: "short",
+			} as NodeJS.ProcessEnv),
+		).toThrow(DashboardEnvError);
+	});
+
+	it("throws when allowed emails is empty after filtering", () => {
+		expect(() =>
+			parseDashboardAuthEnv({
+				...BASE_ENV,
+				DASHBOARD_ALLOWED_EMAILS: ",,,",
+			} as NodeJS.ProcessEnv),
+		).toThrow(DashboardEnvError);
+	});
+
+	it("skips operator secrets when code is not required", () => {
+		const parsed = parseDashboardAuthEnv({
+			...BASE_ENV,
+			DASHBOARD_OPERATOR_CODE_REQUIRED: "false",
+			DASHBOARD_OPERATOR_CODE: "",
+			DASHBOARD_OPERATOR_COOKIE_SECRET: "",
+		} as NodeJS.ProcessEnv);
+		expect(parsed.operatorCodeRequired).toBe(false);
+		expect(parsed.operatorCode).toBe("");
+	});
+
+	it("uses default header names when none are provided", () => {
+		const env = { ...BASE_ENV };
+		delete (env as any).DASHBOARD_CF_ACCESS_EMAIL_HEADER;
+		delete (env as any).DASHBOARD_CF_ACCESS_JWT_HEADER;
+		const parsed = parseDashboardAuthEnv(env as NodeJS.ProcessEnv);
+		expect(parsed.cfAccessEmailHeader).toBe(
+			"CF-Access-Authenticated-User-Email",
+		);
+		expect(parsed.cfAccessJwtHeader).toBe("CF-Access-Jwt-Assertion");
+	});
+
+	it("returns null dashboardHost when not provided", () => {
+		const env = { ...BASE_ENV };
+		delete (env as any).DASHBOARD_HOST;
+		const parsed = parseDashboardAuthEnv(env as NodeJS.ProcessEnv);
+		expect(parsed.dashboardHost).toBeNull();
+	});
+
+	it("throws for invalid boolean env values", () => {
+		expect(() =>
+			parseDashboardAuthEnv({
+				...BASE_ENV,
+				DASHBOARD_CF_ACCESS_ENABLED: "yes",
+			} as NodeJS.ProcessEnv),
+		).toThrow(DashboardEnvError);
+	});
 });

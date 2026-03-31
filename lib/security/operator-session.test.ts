@@ -75,4 +75,73 @@ describe("operator session helpers", () => {
 		expect(isOperatorCodeValid("correct horse battery staple", ENV)).toBe(true);
 		expect(isOperatorCodeValid("wrong code", ENV)).toBe(false);
 	});
+
+	it("rejects a malformed token without a dot separator", () => {
+		const result = verifyOperatorSessionToken("nodot", LOCAL_IDENTITY, ENV);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.state).toBe("challenge_required");
+			expect(result.shouldClear).toBe(true);
+		}
+	});
+
+	it("rejects a token with mismatched subject", () => {
+		const { token } = createOperatorSession(
+			LOCAL_IDENTITY,
+			ENV,
+			new Date("2026-03-31T00:00:00.000Z"),
+		);
+		const result = verifyOperatorSessionToken(
+			token,
+			{
+				mode: "localhost",
+				subject: "other-host",
+				email: null,
+				isLocal: true,
+			},
+			ENV,
+			new Date("2026-03-31T06:00:00.000Z"),
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.shouldClear).toBe(true);
+		}
+	});
+
+	it("rejects a token with tampered signature", () => {
+		const { token } = createOperatorSession(
+			LOCAL_IDENTITY,
+			ENV,
+			new Date("2026-03-31T00:00:00.000Z"),
+		);
+		const tampered = `${token.slice(0, -5)}XXXXX`;
+		const result = verifyOperatorSessionToken(
+			tampered,
+			LOCAL_IDENTITY,
+			ENV,
+			new Date("2026-03-31T06:00:00.000Z"),
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.shouldClear).toBe(true);
+		}
+	});
+
+	it("returns false when operator code is not required", () => {
+		expect(
+			isOperatorCodeValid("anything", {
+				...ENV,
+				operatorCodeRequired: false,
+			}),
+		).toBe(false);
+	});
+
+	it("rejects a null token with challenge_required", () => {
+		const result = verifyOperatorSessionToken(null, LOCAL_IDENTITY, ENV);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.state).toBe("challenge_required");
+			expect(result.shouldClear).toBe(false);
+		}
+	});
 });

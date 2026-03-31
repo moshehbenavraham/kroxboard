@@ -1,17 +1,26 @@
 import fs from "node:fs";
-import path from "node:path";
 import { NextResponse } from "next/server";
 import { clearConfigCache } from "@/lib/config-cache";
 import {
 	callOpenclawGateway,
 	resolveConfigSnapshotHash,
 } from "@/lib/openclaw-cli";
-import { OPENCLAW_AGENTS_DIR } from "@/lib/openclaw-paths";
-import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
+import { resolveOpenclawAgentSessionsFile } from "@/lib/openclaw-paths";
+import { requireFeatureFlag } from "@/lib/security/feature-flags";
+import {
+	getInvalidRequestStatus,
+	readBoundedJsonBody,
+} from "@/lib/security/request-body";
+import {
+	createInvalidRequestResponse,
+	validateModelMutationInput,
+} from "@/lib/security/request-boundary";
+import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
 
 const GATEWAY_CALL_TIMEOUT_MS = 15000;
 const GATEWAY_RECOVERY_TIMEOUT_MS = 45000;
 const GATEWAY_RECOVERY_POLL_MS = 1000;
+const MODEL_MUTATION_BODY_MAX_BYTES = 2048;
 
 type ConfigSnapshot = {
 	valid?: boolean;
@@ -180,12 +189,8 @@ async function waitForPatchedModel(
 }
 
 function clearAgentSessionModelState(agentId: string): void {
-	const sessionsPath = path.join(
-		OPENCLAW_AGENTS_DIR,
-		agentId,
-		"sessions",
-		"sessions.json",
-	);
+	const sessionsPath = resolveOpenclawAgentSessionsFile(agentId);
+	if (!sessionsPath) return;
 	if (!fs.existsSync(sessionsPath)) return;
 
 	const raw = fs.readFileSync(sessionsPath, "utf8");
@@ -211,20 +216,29 @@ function clearAgentSessionModelState(agentId: string): void {
 }
 
 export async function PATCH(request: Request) {
-	const access = requireSensitiveRouteAccess(request);
+	const access = requireSensitiveMutationAccess(request, {
+		allowedMethods: ["PATCH"],
+	});
 	if (!access.ok) return access.response;
+	const feature = requireFeatureFlag("ENABLE_MODEL_MUTATIONS");
+	if (!feature.ok) return feature.response;
+
+	const parsedBody = await readBoundedJsonBody(request, {
+		maxBytes: MODEL_MUTATION_BODY_MAX_BYTES,
+	});
+	if (!parsedBody.ok) {
+		return createInvalidRequestResponse(
+			parsedBody.error,
+			getInvalidRequestStatus(parsedBody.error),
+		);
+	}
 
 	try {
-		const body = await request.json().catch(() => null);
-		const agentId = String(body?.agentId || "").trim();
-		const model = String(body?.model || "").trim();
-
-		if (!agentId || !model) {
-			return NextResponse.json(
-				{ ok: false, error: "Missing agentId or model" },
-				{ status: 400 },
-			);
+		const input = validateModelMutationInput(parsedBody.value);
+		if (!input.ok) {
+			return createInvalidRequestResponse(input.error);
 		}
+		const { agentId, model } = input.value;
 
 		const snapshot = await getConfigSnapshot();
 		if (snapshot?.valid === false || !isPlainObject(snapshot?.config)) {
@@ -246,7 +260,10 @@ export async function PATCH(request: Request) {
 		const agentEntry = findAgentConfigEntry(config, agentId);
 		if (!agentEntry) {
 			return NextResponse.json(
-				{ ok: false, error: `Agent not found in agents.list: ${agentId}` },
+				{
+					ok: false,
+					error: `Agent not found in agents.list: ${agentId}`,
+				},
 				{ status: 404 },
 			);
 		}

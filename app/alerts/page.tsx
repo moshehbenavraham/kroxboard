@@ -1,11 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { OperatorActionBanner } from "@/app/components/operator-action-banner";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
 import { useI18n } from "@/lib/i18n";
 import {
+	createProtectedRequestBannerState,
+	getDiagnosticMetadata,
+	getProtectedRequestBannerState,
 	getProtectedRequestError,
+	type ProtectedRequestBannerState,
 	parseProtectedResponse,
 } from "@/lib/operator-elevation-client";
 
@@ -30,6 +35,23 @@ interface Agent {
 	emoji: string;
 }
 
+interface AlertCheckNotification {
+	agentId: string;
+	mode: "dry_run" | "live_send";
+	status: "dry_run" | "sent" | "failed";
+	message: string;
+	error?: string;
+}
+
+interface AlertCheckResponse {
+	results?: string[];
+	notifications?: AlertCheckNotification[];
+}
+
+type OperatorBannerError = Error & {
+	banner?: ProtectedRequestBannerState;
+};
+
 const CRON_RULE_ID = "cron_continuous_failure";
 
 const RULE_DESCRIPTIONS: Record<string, string> = {
@@ -42,6 +64,27 @@ const RULE_DESCRIPTIONS: Record<string, string> = {
 		"Cron Continuous Failure - Triggered when cron jobs fail multiple times in a row",
 };
 
+function createOperatorBannerError(
+	banner: ProtectedRequestBannerState,
+): OperatorBannerError {
+	const error = new Error(banner.message) as OperatorBannerError;
+	error.banner = banner;
+	return error;
+}
+
+function getOperatorBannerFromError(
+	error: unknown,
+	fallbackMessage: string,
+): ProtectedRequestBannerState {
+	if (error && typeof error === "object" && "banner" in error) {
+		const banner = (error as OperatorBannerError).banner;
+		if (banner) return banner;
+	}
+
+	const message = error instanceof Error ? error.message : fallbackMessage;
+	return createProtectedRequestBannerState("error", message);
+}
+
 export default function AlertsPage() {
 	const { t, locale } = useI18n();
 	const { runProtectedRequest, sessionState } = useOperatorElevation();
@@ -50,9 +93,13 @@ export default function AlertsPage() {
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
-	const [operatorMessage, setOperatorMessage] = useState<string | null>(null);
+	const [operatorBanner, setOperatorBanner] =
+		useState<ProtectedRequestBannerState | null>(null);
 	const [checking, setChecking] = useState(false);
 	const [checkResults, setCheckResults] = useState<string[]>([]);
+	const [notificationResults, setNotificationResults] = useState<
+		AlertCheckNotification[]
+	>([]);
 	const [lastCheckTime, setLastCheckTime] = useState<string>("");
 	const [checkInterval, setCheckInterval] = useState(10);
 	const hasElevatedSession = sessionState?.ok === true;
@@ -100,23 +147,59 @@ export default function AlertsPage() {
 				}),
 		});
 		if (!result.ok) {
-			throw new Error(getProtectedRequestError(result));
+			const banner =
+				getProtectedRequestBannerState(result) ??
+				createProtectedRequestBannerState(
+					"error",
+					getProtectedRequestError(result) || "Alert update failed",
+				);
+			setOperatorBanner(banner);
+			throw createOperatorBannerError(banner);
 		}
 		return result.data;
 	};
 
 	const runManualAlertCheck = async (
 		actionId: string,
-	): Promise<{ results?: string[] }> => {
-		const result = await runProtectedRequest<{ results?: string[] }>({
+	): Promise<AlertCheckResponse> => {
+		const result = await runProtectedRequest<AlertCheckResponse>({
 			actionId,
 			request: () => fetch("/api/alerts/check", { method: "POST" }),
 		});
 		if (!result.ok) {
-			throw new Error(getProtectedRequestError(result));
+			const banner =
+				getProtectedRequestBannerState(result) ??
+				createProtectedRequestBannerState(
+					"error",
+					getProtectedRequestError(result) || "Alert check failed",
+				);
+			setOperatorBanner(banner);
+			throw createOperatorBannerError(banner);
 		}
 		return result.data;
 	};
+
+	const applyCheckResponse = useCallback(
+		(data: AlertCheckResponse) => {
+			const diagnostic = getDiagnosticMetadata(data);
+			setCheckResults(data.results || []);
+			setNotificationResults(data.notifications || []);
+			if (
+				(data.results?.length || 0) > 0 ||
+				(data.notifications?.length || 0) > 0
+			) {
+				setLastCheckTime(new Date().toLocaleTimeString(timeLocale));
+			}
+			if (diagnostic?.mode === "dry_run") {
+				setOperatorBanner(
+					createProtectedRequestBannerState("info", diagnostic.message),
+				);
+				return;
+			}
+			setOperatorBanner(null);
+		},
+		[timeLocale],
+	);
 
 	// Load config and agent data.
 	useEffect(() => {
@@ -138,29 +221,35 @@ export default function AlertsPage() {
 
 		const checkAlerts = () => {
 			setChecking(true);
+			setOperatorBanner(
+				createProtectedRequestBannerState(
+					"pending",
+					"Running scheduled alert diagnostics.",
+				),
+			);
 			fetch("/api/alerts/check", { method: "POST" })
 				.then((response) =>
-					parseProtectedResponse<{ results?: string[] }>(response),
+					parseProtectedResponse<AlertCheckResponse>(response),
 				)
 				.then((result) => {
 					if (!result.ok) {
-						if ("auth" in result) {
-							setOperatorMessage(result.auth.message);
-							return;
-						}
-						setOperatorMessage(result.error);
+						setOperatorBanner(
+							getProtectedRequestBannerState(result) ??
+								createProtectedRequestBannerState(
+									"error",
+									getProtectedRequestError(result) || "Alert check failed",
+								),
+						);
 						return;
 					}
-					setOperatorMessage(null);
-					if (result.data.results && result.data.results.length > 0) {
-						setCheckResults(result.data.results);
-						setLastCheckTime(new Date().toLocaleTimeString(timeLocale));
-					}
+					applyCheckResponse(result.data);
 				})
 				.catch((error: unknown) => {
 					const message =
 						error instanceof Error ? error.message : "Alert check failed";
-					setOperatorMessage(message);
+					setOperatorBanner(
+						createProtectedRequestBannerState("error", message),
+					);
 				})
 				.finally(() => setChecking(false));
 		};
@@ -168,22 +257,24 @@ export default function AlertsPage() {
 		// Only set the timer here; do not run an immediate check.
 		const timer = setInterval(checkAlerts, checkInterval * 60 * 1000);
 		return () => clearInterval(timer);
-	}, [config?.enabled, checkInterval, hasElevatedSession, timeLocale]);
+	}, [config?.enabled, checkInterval, hasElevatedSession, applyCheckResponse]);
 
 	const handleManualCheck = () => {
 		setChecking(true);
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Running a manual alert check.",
+			),
+		);
 		runManualAlertCheck("alerts:manual-check")
 			.then((data) => {
-				setOperatorMessage(null);
-				if (data.results && data.results.length > 0) {
-					setCheckResults(data.results);
-					setLastCheckTime(new Date().toLocaleTimeString(timeLocale));
-				}
+				applyCheckResponse(data);
 			})
 			.catch((error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : "Alert check failed";
-				setOperatorMessage(message);
+				setOperatorBanner(
+					getOperatorBannerFromError(error, "Alert check failed"),
+				);
 			})
 			.finally(() => setChecking(false));
 	};
@@ -191,17 +282,23 @@ export default function AlertsPage() {
 	const handleToggle = () => {
 		if (!config) return;
 		setSaving(true);
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Saving alert configuration changes.",
+			),
+		);
 		updateAlertConfig({ enabled: !config.enabled }, "alerts:toggle")
 			.then((newConfig) => {
-				setOperatorMessage(null);
+				setOperatorBanner(null);
 				setConfig(newConfig);
 				setSaved(true);
 				setTimeout(() => setSaved(false), 2000);
 			})
 			.catch((error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : "Alert update failed";
-				setOperatorMessage(message);
+				setOperatorBanner(
+					getOperatorBannerFromError(error, "Alert update failed"),
+				);
 			})
 			.finally(() => setSaving(false));
 	};
@@ -209,20 +306,26 @@ export default function AlertsPage() {
 	const handleAgentChange = (agentId: string) => {
 		if (!config) return;
 		setSaving(true);
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Saving alert recipient changes.",
+			),
+		);
 		updateAlertConfig(
 			{ receiveAgent: agentId },
 			`alerts:receive-agent:${agentId}`,
 		)
 			.then((newConfig) => {
-				setOperatorMessage(null);
+				setOperatorBanner(null);
 				setConfig(newConfig);
 				setSaved(true);
 				setTimeout(() => setSaved(false), 2000);
 			})
 			.catch((error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : "Alert update failed";
-				setOperatorMessage(message);
+				setOperatorBanner(
+					getOperatorBannerFromError(error, "Alert update failed"),
+				);
 			})
 			.finally(() => setSaving(false));
 	};
@@ -231,17 +334,23 @@ export default function AlertsPage() {
 		if (!config) return;
 		setCheckInterval(value);
 		setSaving(true);
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Saving alert schedule changes.",
+			),
+		);
 		updateAlertConfig({ checkInterval: value }, `alerts:interval:${value}`)
 			.then((newConfig) => {
-				setOperatorMessage(null);
+				setOperatorBanner(null);
 				setConfig(newConfig);
 				setSaved(true);
 				setTimeout(() => setSaved(false), 2000);
 			})
 			.catch((error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : "Alert update failed";
-				setOperatorMessage(message);
+				setOperatorBanner(
+					getOperatorBannerFromError(error, "Alert update failed"),
+				);
 			})
 			.finally(() => setSaving(false));
 	};
@@ -252,17 +361,23 @@ export default function AlertsPage() {
 			r.id === ruleId ? { ...r, enabled: !r.enabled } : r,
 		);
 		setSaving(true);
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Saving alert rule changes.",
+			),
+		);
 		updateAlertConfig({ rules }, `alerts:rule-toggle:${ruleId}`)
 			.then((newConfig) => {
-				setOperatorMessage(null);
+				setOperatorBanner(null);
 				setConfig(newConfig);
 				setSaved(true);
 				setTimeout(() => setSaved(false), 2000);
 			})
 			.catch((error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : "Alert update failed";
-				setOperatorMessage(message);
+				setOperatorBanner(
+					getOperatorBannerFromError(error, "Alert update failed"),
+				);
 			})
 			.finally(() => setSaving(false));
 	};
@@ -273,17 +388,23 @@ export default function AlertsPage() {
 			r.id === ruleId ? { ...r, threshold: value } : r,
 		);
 		setSaving(true);
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Saving alert threshold changes.",
+			),
+		);
 		updateAlertConfig({ rules }, `alerts:threshold:${ruleId}`)
 			.then((newConfig) => {
-				setOperatorMessage(null);
+				setOperatorBanner(null);
 				setConfig(newConfig);
 				setSaved(true);
 				setTimeout(() => setSaved(false), 2000);
 			})
 			.catch((error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : "Alert update failed";
-				setOperatorMessage(message);
+				setOperatorBanner(
+					getOperatorBannerFromError(error, "Alert update failed"),
+				);
 			})
 			.finally(() => setSaving(false));
 	};
@@ -294,17 +415,23 @@ export default function AlertsPage() {
 			rule.id === ruleId ? { ...rule, targetAgents } : rule,
 		);
 		setSaving(true);
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Saving alert target changes.",
+			),
+		);
 		updateAlertConfig({ rules }, `alerts:targets:${ruleId}`)
 			.then((newConfig) => {
-				setOperatorMessage(null);
+				setOperatorBanner(null);
 				setConfig(newConfig);
 				setSaved(true);
 				setTimeout(() => setSaved(false), 2000);
 			})
 			.catch((error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : "Alert update failed";
-				setOperatorMessage(message);
+				setOperatorBanner(
+					getOperatorBannerFromError(error, "Alert update failed"),
+				);
 			})
 			.finally(() => setSaving(false));
 	};
@@ -377,10 +504,12 @@ export default function AlertsPage() {
 					</Link>
 				</div>
 			</div>
-			{operatorMessage && (
-				<div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-					{operatorMessage}
-				</div>
+			{operatorBanner && (
+				<OperatorActionBanner
+					tone={operatorBanner.tone}
+					message={operatorBanner.message}
+					className="mb-6"
+				/>
 			)}
 
 			{/* Check results */}
@@ -403,6 +532,57 @@ export default function AlertsPage() {
 							</li>
 						))}
 					</ul>
+				</div>
+			)}
+
+			{config.enabled && notificationResults.length > 0 && (
+				<div className="p-4 rounded-xl border border-sky-500/30 bg-sky-500/10 mb-6">
+					<div className="flex items-center justify-between mb-2">
+						<h3 className="font-semibold text-sky-300">
+							Alert notification results ({notificationResults.length})
+						</h3>
+						{lastCheckTime && (
+							<span className="text-xs text-[var(--text-muted)]">
+								{lastCheckTime}
+							</span>
+						)}
+					</div>
+					<div className="space-y-2">
+						{notificationResults.map((notification, index) => (
+							<div
+								key={`${notification.agentId}-${notification.mode}-${index}`}
+								className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-sm"
+							>
+								<div className="flex items-center gap-2">
+									<span
+										className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+											notification.status === "sent"
+												? "bg-green-500/20 text-green-300"
+												: notification.status === "dry_run"
+													? "bg-sky-500/20 text-sky-300"
+													: "bg-red-500/20 text-red-300"
+										}`}
+									>
+										{notification.status}
+									</span>
+									<span className="text-[var(--text-muted)]">
+										{notification.agentId}
+									</span>
+									<span className="text-[var(--text-muted)]">
+										mode: {notification.mode}
+									</span>
+								</div>
+								<div className="mt-1 break-words text-[var(--text)]">
+									{notification.message}
+								</div>
+								{notification.error && (
+									<div className="mt-1 break-words text-red-300">
+										{notification.error}
+									</div>
+								)}
+							</div>
+						))}
+					</div>
 				</div>
 			)}
 

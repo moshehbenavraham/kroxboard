@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-31
 **Project**: OpenClaw Dashboard
-**Audit Mode**: Full Audit (no phases completed)
+**Audit Mode**: Phase-Focused Audit (Phase 00 completed; Phase 01 not started)
 
 ## Summary
 
@@ -13,7 +13,7 @@
 | ADRs | N/A | 1 (template) | INFO |
 | Package READMEs | N/A | N/A | N/A (not a monorepo) |
 | Security docs | 2 | 2 | PASS |
-| CODEOWNERS | 1 | 1 | PASS (created) |
+| CODEOWNERS | 1 | 1 | PASS |
 
 ## Root Level
 
@@ -28,10 +28,10 @@
 | File | Status |
 |------|--------|
 | ARCHITECTURE.md | Current -- system overview, dependency graph, components, data layer, security architecture |
-| CODEOWNERS | Created during this audit |
+| CODEOWNERS | Present -- file ownership routing |
 | onboarding.md | Current -- prerequisites, setup steps, common issues |
 | development.md | Current -- dev scripts, project layout, env vars, testing, debugging |
-| environments.md | Current -- dev vs production config, env variable inventory |
+| environments.md | Updated -- added Cloudflare Access OTP primary and session header settings from .env.example |
 | deployment.md | Current -- Docker, Cloudflare Access + Tunnel, CI/CD, rollback |
 | adr/0000-template.md | Template only -- no decisions recorded yet (expected pre-implementation) |
 | runbooks/incident-response.md | Current -- severity levels, common incidents with resolution steps |
@@ -63,11 +63,9 @@ All documentation links verified:
 
 ## Actions Taken
 
-### Created
-- `docs/CODEOWNERS` -- file ownership for code review routing
-
 ### Updated
-- `docs/quick-start.md` -- removed stale references to `github.com/xmanrui/OpenClaw-bot-review`, `npx clawhub install`, and `npx skills add`; replaced with accurate quick start and links to canonical setup docs
+- `docs/environments.md` -- added Cloudflare Access OTP primary, session duration, and optional header settings from `.env.example`
+- `.spec_system/docs-audit.md` -- refreshed the audit mode and next-step guidance for the completed Phase 00 state
 
 ### Verified (No Changes Needed)
 - README.md
@@ -76,7 +74,6 @@ All documentation links verified:
 - docs/ARCHITECTURE.md
 - docs/onboarding.md
 - docs/development.md
-- docs/environments.md
 - docs/deployment.md
 - docs/runbooks/incident-response.md
 - docs/adr/0000-template.md
@@ -86,12 +83,12 @@ All documentation links verified:
 
 ## Documentation Gaps
 
-- **No ADRs recorded**: Expected since implementation has not started. First ADR should be created during Phase 00 Session 01 when auth architecture decisions are made.
+- **No ADRs recorded**: The repo still only has the ADR template. Phase 00 auth and deployment decisions would be a good candidate for the first real ADR.
 - **No docs/api/ directory**: API contract documentation does not exist yet. Should be created as API routes are hardened during Phase 01.
 
 ## Next Audit
 
 Recommend re-running `/documents` after:
-- Completing Phase 00 (Foundation)
+- Completing the first Phase 01 session
 - Adding new security utilities or route guards
-- Making architectural decisions that warrant ADRs
+- Recording architecture decisions that warrant ADRs

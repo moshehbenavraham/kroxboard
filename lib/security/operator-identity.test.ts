@@ -85,4 +85,167 @@ describe("resolveOperatorIdentity", () => {
 			message: "Cloudflare Access assertion is invalid",
 		});
 	});
+
+	it("denies remote access when cfAccessEnabled is false", () => {
+		const env = {
+			...BASE_ENV,
+			cfAccessEnabled: false,
+		};
+		const result = resolveOperatorIdentity(
+			new Request("https://board.example.com/api/test", {
+				headers: { host: "board.example.com" },
+			}),
+			env,
+		);
+
+		expect(result).toEqual({
+			ok: false,
+			state: "identity_denied",
+			message: "Remote operator access is disabled",
+		});
+	});
+
+	it("denies when no CF email header is present", () => {
+		const result = resolveOperatorIdentity(
+			new Request("https://board.example.com/api/test", {
+				headers: { host: "board.example.com" },
+			}),
+			BASE_ENV,
+		);
+
+		expect(result).toEqual({
+			ok: false,
+			state: "identity_denied",
+			message: "Cloudflare Access identity is missing",
+		});
+	});
+
+	it("denies when email is not in the allowed list", () => {
+		const result = resolveOperatorIdentity(
+			new Request("https://board.example.com/api/test", {
+				headers: {
+					host: "board.example.com",
+					"CF-Access-Authenticated-User-Email": "hacker@evil.com",
+					"CF-Access-Jwt-Assertion": createAccessJwt({ aud: "cf-aud" }),
+				},
+			}),
+			BASE_ENV,
+		);
+
+		expect(result).toEqual({
+			ok: false,
+			state: "identity_denied",
+			message: "Operator access denied",
+		});
+	});
+
+	it("denies when JWT assertion header is missing", () => {
+		const result = resolveOperatorIdentity(
+			new Request("https://board.example.com/api/test", {
+				headers: {
+					host: "board.example.com",
+					"CF-Access-Authenticated-User-Email": "operator@example.com",
+				},
+			}),
+			BASE_ENV,
+		);
+
+		expect(result).toEqual({
+			ok: false,
+			state: "identity_denied",
+			message: "Cloudflare Access assertion is missing",
+		});
+	});
+
+	it("trusts 127.0.0.1 as a local request", () => {
+		const result = resolveOperatorIdentity(
+			new Request("http://127.0.0.1:3000/api/test"),
+			BASE_ENV,
+		);
+
+		expect(result.ok).toBe(true);
+	});
+
+	it("handles x-forwarded-host header for host resolution", () => {
+		const result = resolveOperatorIdentity(
+			new Request("http://internal-proxy:8080/api/test", {
+				headers: {
+					"x-forwarded-host": "board.example.com",
+					"CF-Access-Authenticated-User-Email": "operator@example.com",
+					"CF-Access-Jwt-Assertion": createAccessJwt({ aud: "cf-aud" }),
+				},
+			}),
+			BASE_ENV,
+		);
+
+		expect(result.ok).toBe(true);
+	});
+
+	it("accepts aud as an array in JWT payload", () => {
+		const result = resolveOperatorIdentity(
+			new Request("https://board.example.com/api/test", {
+				headers: {
+					host: "board.example.com",
+					"CF-Access-Authenticated-User-Email": "operator@example.com",
+					"CF-Access-Jwt-Assertion": createAccessJwt({
+						aud: ["other-aud", "cf-aud"],
+					}),
+				},
+			}),
+			BASE_ENV,
+		);
+
+		expect(result.ok).toBe(true);
+	});
+
+	it("skips audience check when cfAccessAud is null", () => {
+		const env = { ...BASE_ENV, cfAccessAud: null };
+		const result = resolveOperatorIdentity(
+			new Request("https://board.example.com/api/test", {
+				headers: {
+					host: "board.example.com",
+					"CF-Access-Authenticated-User-Email": "operator@example.com",
+				},
+			}),
+			env,
+		);
+
+		expect(result.ok).toBe(true);
+	});
+
+	it("trusts [::1] as a local request", () => {
+		const result = resolveOperatorIdentity(
+			new Request("http://[::1]:3000/api/test"),
+			BASE_ENV,
+		);
+		expect(result.ok).toBe(true);
+	});
+
+	it("denies when JWT payload has non-string non-array aud", () => {
+		const result = resolveOperatorIdentity(
+			new Request("https://board.example.com/api/test", {
+				headers: {
+					host: "board.example.com",
+					"CF-Access-Authenticated-User-Email": "operator@example.com",
+					"CF-Access-Jwt-Assertion": createAccessJwt({ aud: 12345 }),
+				},
+			}),
+			BASE_ENV,
+		);
+		expect(result.ok).toBe(false);
+	});
+
+	it("handles malformed JWT assertion gracefully", () => {
+		const result = resolveOperatorIdentity(
+			new Request("https://board.example.com/api/test", {
+				headers: {
+					host: "board.example.com",
+					"CF-Access-Authenticated-User-Email": "operator@example.com",
+					"CF-Access-Jwt-Assertion": "not.a-valid-base64.jwt",
+				},
+			}),
+			BASE_ENV,
+		);
+		expect(result.ok).toBe(false);
+	});
 });

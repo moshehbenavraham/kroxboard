@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
-import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
+import {
+	applyDiagnosticRateLimitHeaders,
+	enforceDiagnosticRateLimit,
+} from "@/lib/security/diagnostic-rate-limit";
+import { requireFeatureFlag } from "@/lib/security/feature-flags";
+import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
 import {
 	parseApiJsonSafely,
 	shouldFallbackToCli,
@@ -17,8 +22,17 @@ function hasEmbeddedHttpError(reply: string): boolean {
 }
 
 export async function POST(request: Request) {
-	const access = requireSensitiveRouteAccess(request);
+	const access = requireSensitiveMutationAccess(request, {
+		allowedMethods: ["POST"],
+	});
 	if (!access.ok) return access.response;
+	const feature = requireFeatureFlag("ENABLE_OUTBOUND_TESTS");
+	if (!feature.ok) return feature.response;
+	const rateLimit = enforceDiagnosticRateLimit(
+		request,
+		"session_diagnostic_batch",
+	);
+	if (!rateLimit.ok) return rateLimit.response;
 
 	try {
 		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
@@ -103,27 +117,32 @@ export async function POST(request: Request) {
 						results.push({ agentId, ok: true, reply: clippedReply, elapsed });
 					}
 				}
-			} catch (err: any) {
+			} catch (_err: any) {
 				const elapsed = Date.now() - startTime;
 				const isTimeout =
-					err.name === "TimeoutError" || err.name === "AbortError";
+					_err.name === "TimeoutError" || _err.name === "AbortError";
 				results.push({
 					agentId,
 					ok: false,
 					error: isTimeout
 						? "Timeout (100s)"
-						: (err.message || "Unknown error").slice(0, 300),
+						: (_err.message || "Unknown error").slice(0, 300),
 					elapsed,
 				});
 			}
 		}
 
-		return NextResponse.json({ results });
-	} catch (err: any) {
-		return NextResponse.json({ error: err.message }, { status: 500 });
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json({ results }),
+			rateLimit.metadata,
+		);
+	} catch (_err: any) {
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json(
+				{ error: "Session diagnostics failed" },
+				{ status: 500 },
+			),
+			rateLimit.metadata,
+		);
 	}
-}
-
-export async function GET(request: Request) {
-	return POST(request);
 }

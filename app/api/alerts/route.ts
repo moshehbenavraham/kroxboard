@@ -2,10 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { OPENCLAW_HOME } from "@/lib/openclaw-paths";
-import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
+import { requireFeatureFlag } from "@/lib/security/feature-flags";
+import {
+	getInvalidRequestStatus,
+	readBoundedJsonBody,
+} from "@/lib/security/request-body";
+import {
+	createInvalidRequestResponse,
+	validateAlertWriteInput,
+} from "@/lib/security/request-boundary";
+import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
 
 const ALERTS_CONFIG_PATH = path.join(OPENCLAW_HOME, "alerts.json");
 const CRON_RULE_ID = "cron_continuous_failure";
+const ALERT_WRITE_BODY_MAX_BYTES = 4096;
 
 interface AlertRule {
 	id: string;
@@ -77,6 +87,66 @@ function saveAlertConfig(config: AlertConfig): void {
 	fs.writeFileSync(ALERTS_CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 
+async function handleAlertWrite(request: Request): Promise<NextResponse> {
+	const access = requireSensitiveMutationAccess(request, {
+		allowedMethods: ["POST", "PUT"],
+	});
+	if (!access.ok) return access.response;
+
+	const feature = requireFeatureFlag("ENABLE_ALERT_WRITES");
+	if (!feature.ok) return feature.response;
+
+	const parsedBody = await readBoundedJsonBody(request, {
+		maxBytes: ALERT_WRITE_BODY_MAX_BYTES,
+	});
+	if (!parsedBody.ok) {
+		return createInvalidRequestResponse(
+			parsedBody.error,
+			getInvalidRequestStatus(parsedBody.error),
+		);
+	}
+
+	try {
+		const update = validateAlertWriteInput(parsedBody.value);
+		if (!update.ok) {
+			return createInvalidRequestResponse(update.error);
+		}
+		const config = getAlertConfig();
+
+		if (update.value.enabled !== undefined)
+			config.enabled = update.value.enabled;
+		if (update.value.receiveAgent)
+			config.receiveAgent = update.value.receiveAgent;
+		if (update.value.checkInterval !== undefined) {
+			config.checkInterval = update.value.checkInterval;
+		}
+		if (update.value.rules) {
+			for (const newRule of update.value.rules) {
+				const existingRule = config.rules.find((r) => r.id === newRule.id);
+				if (existingRule) {
+					if (newRule.enabled !== undefined) {
+						existingRule.enabled = newRule.enabled;
+					}
+					if (newRule.threshold !== undefined) {
+						existingRule.threshold = newRule.threshold;
+					}
+					if (newRule.targetAgents !== undefined) {
+						existingRule.targetAgents = newRule.targetAgents;
+					}
+				}
+			}
+		}
+
+		saveAlertConfig(config);
+		return NextResponse.json(config);
+	} catch {
+		return NextResponse.json(
+			{ error: "Alert configuration update failed" },
+			{ status: 500 },
+		);
+	}
+}
+
 export async function GET() {
 	try {
 		const config = getAlertConfig();
@@ -90,76 +160,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-	const access = requireSensitiveRouteAccess(request);
-	if (!access.ok) return access.response;
-
-	try {
-		const body = await request.json();
-		const config = getAlertConfig();
-
-		if (body.enabled !== undefined) config.enabled = body.enabled;
-		if (body.receiveAgent) config.receiveAgent = body.receiveAgent;
-		if (body.checkInterval !== undefined)
-			config.checkInterval = body.checkInterval;
-		if (body.rules) {
-			for (const newRule of body.rules) {
-				const existingRule = config.rules.find((r) => r.id === newRule.id);
-				if (existingRule) {
-					existingRule.enabled = newRule.enabled;
-					if (newRule.threshold !== undefined) {
-						existingRule.threshold = newRule.threshold;
-					}
-					if (newRule.targetAgents !== undefined) {
-						existingRule.targetAgents = newRule.targetAgents;
-					}
-				}
-			}
-		}
-
-		saveAlertConfig(config);
-		return NextResponse.json(config);
-	} catch (err: unknown) {
-		return NextResponse.json(
-			{ error: err instanceof Error ? err.message : String(err) },
-			{ status: 500 },
-		);
-	}
+	return handleAlertWrite(request);
 }
 
 export async function PUT(request: Request) {
-	const access = requireSensitiveRouteAccess(request);
-	if (!access.ok) return access.response;
-
-	try {
-		const body = await request.json();
-		const config = getAlertConfig();
-
-		if (body.enabled !== undefined) config.enabled = body.enabled;
-		if (body.receiveAgent) config.receiveAgent = body.receiveAgent;
-		if (body.checkInterval !== undefined)
-			config.checkInterval = body.checkInterval;
-		if (body.rules) {
-			// Merge rule config updates.
-			for (const newRule of body.rules) {
-				const existingRule = config.rules.find((r) => r.id === newRule.id);
-				if (existingRule) {
-					existingRule.enabled = newRule.enabled;
-					if (newRule.threshold !== undefined) {
-						existingRule.threshold = newRule.threshold;
-					}
-					if (newRule.targetAgents !== undefined) {
-						existingRule.targetAgents = newRule.targetAgents;
-					}
-				}
-			}
-		}
-
-		saveAlertConfig(config);
-		return NextResponse.json(config);
-	} catch (err: unknown) {
-		return NextResponse.json(
-			{ error: err instanceof Error ? err.message : String(err) },
-			{ status: 500 },
-		);
-	}
+	return handleAlertWrite(request);
 }

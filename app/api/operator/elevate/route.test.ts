@@ -2,6 +2,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const ORIGINAL_ENV = { ...process.env };
 
+function withLocalOrigin(
+	headers: Record<string, string> = {},
+): Record<string, string> {
+	return {
+		origin: "http://localhost:3000",
+		...headers,
+	};
+}
+
+function withRemoteOrigin(
+	headers: Record<string, string> = {},
+): Record<string, string> {
+	return {
+		host: "board.example.com",
+		origin: "https://board.example.com",
+		...headers,
+	};
+}
+
+function withCrossOrigin(
+	headers: Record<string, string> = {},
+): Record<string, string> {
+	return {
+		origin: "https://evil.example.com",
+		...headers,
+	};
+}
+
 function applyBaseEnv(): void {
 	process.env.DASHBOARD_HOST = "board.example.com";
 	process.env.DASHBOARD_ALLOWED_EMAILS = "operator@example.com";
@@ -19,7 +47,7 @@ function applyBaseEnv(): void {
 	process.env.DASHBOARD_OPERATOR_SESSION_HOURS = "12";
 }
 
-describe("POST /api/operator/elevate", () => {
+describe("/api/operator/elevate", () => {
 	beforeEach(() => {
 		vi.resetModules();
 		Object.assign(process.env, ORIGINAL_ENV);
@@ -30,41 +58,160 @@ describe("POST /api/operator/elevate", () => {
 		process.env = { ...ORIGINAL_ENV };
 	});
 
-	it("issues a signed cookie for a trusted localhost operator", async () => {
-		const route = await import("./route");
-		const response = await route.POST(
-			new Request("http://localhost:3000/api/operator/elevate", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					code: process.env.DASHBOARD_OPERATOR_CODE,
+	describe("POST", () => {
+		it("issues a signed cookie for a trusted localhost operator", async () => {
+			const route = await import("./route");
+			const response = await route.POST(
+				new Request("http://localhost:3000/api/operator/elevate", {
+					method: "POST",
+					headers: withLocalOrigin({
+						"Content-Type": "application/json",
+					}),
+					body: JSON.stringify({
+						code: process.env.DASHBOARD_OPERATOR_CODE,
+					}),
 				}),
-			}),
-		);
+			);
 
-		expect(response.status).toBe(200);
-		const body = await response.json();
-		expect(body.ok).toBe(true);
-		expect(body.session.state).toBe("elevated");
-		expect(response.headers.get("set-cookie")).toContain(
-			"dashboard_operator_session=",
-		);
+			expect(response.status).toBe(200);
+			const body = await response.json();
+			expect(body.ok).toBe(true);
+			expect(body.session.state).toBe("elevated");
+			expect(response.headers.get("set-cookie")).toContain(
+				"dashboard_operator_session=",
+			);
+		});
+
+		it("rejects an invalid operator code", async () => {
+			const route = await import("./route");
+			const response = await route.POST(
+				new Request("http://localhost:3000/api/operator/elevate", {
+					method: "POST",
+					headers: withLocalOrigin({
+						"Content-Type": "application/json",
+					}),
+					body: JSON.stringify({ code: "wrong code" }),
+				}),
+			);
+
+			expect(response.status).toBe(401);
+			await expect(response.json()).resolves.toEqual({
+				ok: false,
+				error: "Invalid operator code",
+			});
+		});
+
+		it("rejects an empty code", async () => {
+			const route = await import("./route");
+			const response = await route.POST(
+				new Request("http://localhost:3000/api/operator/elevate", {
+					method: "POST",
+					headers: withLocalOrigin({
+						"Content-Type": "application/json",
+					}),
+					body: JSON.stringify({ code: "   " }),
+				}),
+			);
+
+			expect(response.status).toBe(400);
+			const body = await response.json();
+			expect(body.error).toBe("Operator code is required");
+		});
+
+		it("rejects missing body", async () => {
+			const route = await import("./route");
+			const response = await route.POST(
+				new Request("http://localhost:3000/api/operator/elevate", {
+					method: "POST",
+					headers: withLocalOrigin({
+						"Content-Type": "application/json",
+					}),
+					body: "not json",
+				}),
+			);
+
+			expect(response.status).toBe(400);
+		});
+
+		it("returns 403 when operator code is disabled", async () => {
+			process.env.DASHBOARD_OPERATOR_CODE_REQUIRED = "false";
+			const route = await import("./route");
+			const response = await route.POST(
+				new Request("http://localhost:3000/api/operator/elevate", {
+					method: "POST",
+					headers: withLocalOrigin({
+						"Content-Type": "application/json",
+					}),
+					body: JSON.stringify({ code: "something" }),
+				}),
+			);
+			expect(response.status).toBe(403);
+		});
+
+		it("returns 403 for remote requests without CF identity", async () => {
+			const route = await import("./route");
+			const response = await route.POST(
+				new Request("https://board.example.com/api/operator/elevate", {
+					method: "POST",
+					headers: withRemoteOrigin({
+						"Content-Type": "application/json",
+					}),
+					body: JSON.stringify({ code: "something" }),
+				}),
+			);
+			expect(response.status).toBe(403);
+		});
+
+		it("returns config error when env is incomplete", async () => {
+			delete process.env.DASHBOARD_CF_ACCESS_ENABLED;
+			const route = await import("./route");
+			const response = await route.POST(
+				new Request("http://localhost:3000/api/operator/elevate", {
+					method: "POST",
+					headers: withLocalOrigin({
+						"Content-Type": "application/json",
+					}),
+					body: JSON.stringify({ code: "test" }),
+				}),
+			);
+			expect(response.status).toBe(503);
+		});
 	});
 
-	it("rejects an invalid operator code", async () => {
-		const route = await import("./route");
-		const response = await route.POST(
-			new Request("http://localhost:3000/api/operator/elevate", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ code: "wrong code" }),
-			}),
-		);
+	describe("DELETE", () => {
+		it("clears the session cookie", async () => {
+			const route = await import("./route");
+			const response = await route.DELETE(
+				new Request("http://localhost:3000/api/operator/elevate", {
+					method: "DELETE",
+					headers: withLocalOrigin(),
+				}),
+			);
 
-		expect(response.status).toBe(401);
-		await expect(response.json()).resolves.toEqual({
-			ok: false,
-			error: "Invalid operator code",
+			expect(response.status).toBe(200);
+			const body = await response.json();
+			expect(body.ok).toBe(true);
+			expect(body.cleared).toBe(true);
+			const setCookie = response.headers.get("set-cookie");
+			expect(setCookie).toContain("dashboard_operator_session=");
+		});
+
+		it("rejects cross-origin session clear requests", async () => {
+			const route = await import("./route");
+			const response = await route.DELETE(
+				new Request("http://localhost:3000/api/operator/elevate", {
+					method: "DELETE",
+					headers: withCrossOrigin(),
+				}),
+			);
+
+			expect(response.status).toBe(403);
+			await expect(response.json()).resolves.toMatchObject({
+				mutation: {
+					state: "origin_denied",
+					type: "sensitive_mutation",
+				},
+			});
 		});
 	});
 });

@@ -1,9 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { OperatorActionBanner } from "@/app/components/operator-action-banner";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
 import { useI18n } from "@/lib/i18n";
-import { getProtectedRequestError } from "@/lib/operator-elevation-client";
+import {
+	createProtectedRequestBannerState,
+	getDryRunDiagnosticMessage,
+	getProtectedRequestBannerState,
+	getProtectedRequestError,
+	type ProtectedRequestBannerState,
+} from "@/lib/operator-elevation-client";
 import {
 	AgentCard,
 	type AgentModelOptionGroup,
@@ -17,9 +24,7 @@ import { GatewayStatus } from "./gateway-status";
 interface Platform {
 	name: string;
 	accountId?: string;
-	appId?: string;
-	botOpenId?: string;
-	botUserId?: string;
+	launchPath?: string;
 }
 
 interface Agent {
@@ -27,6 +32,7 @@ interface Agent {
 	name: string;
 	emoji: string;
 	model: string;
+	launchPath?: string;
 	platforms: Platform[];
 	session?: {
 		lastActive: number | null;
@@ -54,7 +60,7 @@ interface ConfigData {
 		accessMode?: "auth" | "api_key";
 		models?: Array<{ id: string; name?: string }>;
 	}>;
-	gateway?: { port: number; token?: string; host?: string };
+	gateway?: { launchPath?: string };
 	groupChats?: GroupChat[];
 }
 
@@ -379,7 +385,8 @@ export default function Home() {
 	const { runProtectedRequest } = useOperatorElevation();
 	const [data, setData] = useState<ConfigData | null>(cachedHomeData);
 	const [error, setError] = useState<string | null>(cachedHomeError);
-	const [operatorMessage, setOperatorMessage] = useState<string | null>(null);
+	const [operatorBanner, setOperatorBanner] =
+		useState<ProtectedRequestBannerState | null>(null);
 	const [refreshInterval, setRefreshInterval] = useState(
 		cachedHomeRefreshInterval,
 	);
@@ -441,9 +448,21 @@ export default function Home() {
 					}),
 			});
 			if (!result.ok) {
-				throw new Error(getProtectedRequestError(result));
+				const banner =
+					getProtectedRequestBannerState(result) ??
+					createProtectedRequestBannerState(
+						"error",
+						getProtectedRequestError(result) || "Request failed",
+					);
+				setOperatorBanner(banner);
+				throw new Error(banner.message);
 			}
-			setOperatorMessage(null);
+			const dryRunMessage = getDryRunDiagnosticMessage(result.data);
+			setOperatorBanner(
+				dryRunMessage
+					? createProtectedRequestBannerState("info", dryRunMessage)
+					: null,
+			);
 			return result.data;
 		},
 		[runProtectedRequest],
@@ -484,6 +503,12 @@ export default function Home() {
 
 	const changeAgentModel = useCallback(
 		async (agentId: string, model: string) => {
+			setOperatorBanner(
+				createProtectedRequestBannerState(
+					"pending",
+					`Applying ${model} to ${agentId}.`,
+				),
+			);
 			const result = await runProtectedRequest<{
 				ok: boolean;
 				error?: string;
@@ -497,17 +522,23 @@ export default function Home() {
 					}),
 			});
 			if (!result.ok) {
-				const message =
-					getProtectedRequestError(result) || t("agent.modelApplyFailed");
-				setOperatorMessage(message);
-				throw new Error(message);
+				const banner =
+					getProtectedRequestBannerState(result) ??
+					createProtectedRequestBannerState(
+						"error",
+						getProtectedRequestError(result) || t("agent.modelApplyFailed"),
+					);
+				setOperatorBanner(banner);
+				throw new Error(banner.message);
 			}
 			if (!result.data.ok) {
 				const message = result.data.error || t("agent.modelApplyFailed");
-				setOperatorMessage(message);
+				setOperatorBanner(
+					createProtectedRequestBannerState("invalid", message),
+				);
 				throw new Error(message);
 			}
-			setOperatorMessage(null);
+			setOperatorBanner(null);
 			fetchData(true);
 		},
 		[fetchData, runProtectedRequest, t],
@@ -598,6 +629,12 @@ export default function Home() {
 
 	const testAllAgents = useCallback(() => {
 		setTesting(true);
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Running model probes for all agents.",
+			),
+		);
 		// Set all agents to null (testing indicator) so UI shows ...
 		const pending: Record<string, any> = {};
 		if (data) for (const a of data.agents) pending[a.id] = null;
@@ -615,7 +652,7 @@ export default function Home() {
 			})
 			.catch((e) => {
 				const msg = e instanceof Error ? e.message : "Request failed";
-				setOperatorMessage(msg);
+				setOperatorBanner(createProtectedRequestBannerState("error", msg));
 				const failed: Record<
 					string,
 					{ ok: boolean; error: string; elapsed: number }
@@ -630,6 +667,12 @@ export default function Home() {
 
 	const testAllPlatforms = useCallback(() => {
 		setTestingPlatforms(true);
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Running outbound platform diagnostics.",
+			),
+		);
 		// Set all agent:platform combos to null (...)
 		const pending: Record<string, any> = {};
 		if (data) {
@@ -650,7 +693,7 @@ export default function Home() {
 			})
 			.catch((e) => {
 				const msg = e instanceof Error ? e.message : "Request failed";
-				setOperatorMessage(msg);
+				setOperatorBanner(createProtectedRequestBannerState("error", msg));
 				const failed: Record<string, PlatformTestResult> = {};
 				if (data) {
 					for (const a of data.agents) {
@@ -670,6 +713,12 @@ export default function Home() {
 
 	const testAllSessions = useCallback(() => {
 		setTestingSessions(true);
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Running session diagnostics for all agents.",
+			),
+		);
 		const pending: Record<string, any> = {};
 		if (data) for (const a of data.agents) pending[a.id] = null;
 		setSessionTestResults(pending);
@@ -686,7 +735,7 @@ export default function Home() {
 			})
 			.catch((e) => {
 				const msg = e instanceof Error ? e.message : "Request failed";
-				setOperatorMessage(msg);
+				setOperatorBanner(createProtectedRequestBannerState("error", msg));
 				const failed: Record<
 					string,
 					{ ok: boolean; error: string; elapsed: number }
@@ -701,6 +750,12 @@ export default function Home() {
 
 	const testAllDmSessions = useCallback(() => {
 		setTestingDmSessions(true);
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Running direct-message diagnostics.",
+			),
+		);
 		const pending: Record<string, any> = {};
 		if (data) {
 			for (const a of data.agents) {
@@ -720,7 +775,7 @@ export default function Home() {
 			})
 			.catch((e) => {
 				const msg = e instanceof Error ? e.message : "Request failed";
-				setOperatorMessage(msg);
+				setOperatorBanner(createProtectedRequestBannerState("error", msg));
 				const failed: Record<string, PlatformTestResult> = {};
 				if (data) {
 					for (const a of data.agents) {
@@ -908,10 +963,12 @@ export default function Home() {
 					)}
 				</div>
 			</div>
-			{operatorMessage && (
-				<div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-					{operatorMessage}
-				</div>
+			{operatorBanner && (
+				<OperatorActionBanner
+					tone={operatorBanner.tone}
+					message={operatorBanner.message}
+					className="mb-3"
+				/>
 			)}
 
 			{/* Agent cards */}
@@ -920,9 +977,6 @@ export default function Home() {
 					<AgentCard
 						key={agent.id}
 						agent={agent}
-						gatewayPort={data.gateway?.port || 18789}
-						gatewayToken={data.gateway?.token}
-						gatewayHost={data.gateway?.host}
 						t={t}
 						testResult={testResults?.[agent.id]}
 						platformTestResults={platformTestResults || undefined}
@@ -985,7 +1039,7 @@ export default function Home() {
 														className="text-xs text-[var(--text-muted)]"
 													>
 														<span className="text-[var(--accent)] mr-1">
-															{"->"}
+															{"-\u003E"}
 														</span>
 														<span className="font-medium text-[var(--text)]">
 															{sub.label}

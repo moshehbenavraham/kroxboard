@@ -3,9 +3,10 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { parseJsonText } from "@/lib/json";
 import {
+	isValidOpenclawAgentId,
 	OPENCLAW_AGENTS_DIR,
 	OPENCLAW_CONFIG_PATH,
-	OPENCLAW_HOME,
+	resolveOpenclawCronStorePath,
 } from "@/lib/openclaw-paths";
 
 export const dynamic = "force-dynamic";
@@ -87,7 +88,10 @@ async function loadAgentList(
 ): Promise<AgentConfigEntry[]> {
 	const configured = Array.isArray(config?.agents?.list)
 		? config.agents.list.filter(
-				(agent: any) => agent && typeof agent.id === "string" && agent.id,
+				(agent: any) =>
+					agent &&
+					typeof agent.id === "string" &&
+					isValidOpenclawAgentId(agent.id.trim()),
 			)
 		: [];
 	if (configured.length > 0) return configured;
@@ -96,7 +100,12 @@ async function loadAgentList(
 		if (!existsSync(agentsDir)) return [];
 		const dirs = await fs.readdir(agentsDir, { withFileTypes: true });
 		return dirs
-			.filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+			.filter(
+				(entry) =>
+					entry.isDirectory() &&
+					!entry.name.startsWith(".") &&
+					isValidOpenclawAgentId(entry.name),
+			)
 			.map((entry) => ({ id: entry.name }));
 	} catch {
 		return [];
@@ -135,7 +144,7 @@ function extractCompletedSubagentLabel(text: string): string | null {
 		/A subagent task\s+'([^']+)'\s+just completed/i,
 		/subagent task\s+"([^"]+)"\s+.*completed/i,
 		/subagent task\s+'([^']+)'\s+.*completed/i,
-		/\u5b50\u4efb\u52a1[“"]([^”"]+)[”"].{0,12}\u5b8c\u6210/,
+		/(?:Subtask:|subtask)["']([^"']+)["'].{0,12}completed/i,
 	];
 	for (const p of patterns) {
 		const m = text.match(p);
@@ -171,7 +180,7 @@ function normalizeActivityText(raw: unknown): string | null {
 	const compact = raw.replace(/\s+/g, " ").trim();
 	if (!compact) return null;
 	return compact.length > SUBAGENT_ACTIVITY_TEXT_MAX_LEN
-		? `${compact.slice(0, SUBAGENT_ACTIVITY_TEXT_MAX_LEN - 1)}…`
+		? `${compact.slice(0, SUBAGENT_ACTIVITY_TEXT_MAX_LEN - 1)}...`
 		: compact;
 }
 
@@ -185,20 +194,16 @@ function normalizeCronLabel(raw: unknown, fallbackKey: string): string {
 function truncateSummary(raw: string, maxLen = 120): string {
 	const compact = raw.replace(/\s+/g, " ").trim();
 	if (!compact) return "";
-	return compact.length > maxLen ? `${compact.slice(0, maxLen - 1)}…` : compact;
-}
-
-function resolveCronStorePath(config: any): string {
-	const raw =
-		typeof config?.cron?.store === "string" ? config.cron.store.trim() : "";
-	if (!raw) return path.join(OPENCLAW_HOME, "cron", "jobs.json");
-	if (raw.startsWith("~"))
-		return path.join(process.env.HOME || "", raw.slice(1));
-	return path.resolve(raw);
+	return compact.length > maxLen
+		? `${compact.slice(0, maxLen - 1)}...`
+		: compact;
 }
 
 async function loadCronJobs(config: any): Promise<CronStoreJob[]> {
-	const storePath = resolveCronStorePath(config);
+	const rawStorePath =
+		typeof config?.cron?.store === "string" ? config.cron.store : "";
+	const storePath = resolveOpenclawCronStorePath(rawStorePath);
+	if (!storePath) return [];
 	if (!existsSync(storePath)) return [];
 	try {
 		const raw = await fs.readFile(storePath, "utf8");
@@ -1032,7 +1037,7 @@ export async function GET() {
 					agents.push({
 						agentId: agent.id,
 						name: agent.name || agent.id,
-						emoji: agent.identity?.emoji || agent.emoji || "🤖",
+						emoji: agent.identity?.emoji || agent.emoji || "bot",
 						state,
 						lastActive,
 						subagents,

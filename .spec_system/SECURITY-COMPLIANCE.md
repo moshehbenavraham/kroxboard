@@ -1,7 +1,7 @@
 # Security & Compliance
 
 > Cumulative security posture and GDPR compliance record. Updated between phases via /carryforward.
-> **Line budget**: 1000 max | **Last updated**: Pre-Phase 00 baseline (2026-03-31)
+> **Line budget**: 1000 max | **Last updated**: Phase 00 (2026-03-31)
 
 ---
 
@@ -11,105 +11,81 @@
 
 | Metric | Value |
 |--------|-------|
-| Open Findings | 35 |
-| Critical/High | 13 |
-| Medium/Low | 22 |
-| Phases Audited | 0 (pre-implementation baseline) |
+| Open Findings | 30 |
+| Critical/High | 10 |
+| Medium/Low | 20 |
+| Phases Audited | 1 |
 | Last Clean Phase | -- |
 
 ---
 
 ## Open Findings
 
-Active security issues from the March 29-30, 2026 audit. Ordered by severity.
+Active security or GDPR issues requiring attention. Ordered by severity.
 Canonical definitions: `.spec_system/PRD/PRD.md` Appendix A. Live status: `docs/SECURITY_FINDINGS.md`.
 
 ### Critical / High
 
-- **[Pre-S01] Gateway auth token leaked to any network client**
-  - Severity: Critical
-  - File: `app/api/config/route.ts` (gateway object), `app/api/gateway-health/route.ts` (webUrl with `?token=`)
-  - Description: `/api/config` GET returns `gateway.token` in JSON. `/api/gateway-health` GET embeds the token in URL query params. Any caller on the network harvests the sole gateway credential.
-  - Remediation: Strip `gateway.token` from all API responses; move token attachment to server-side-only flows.
-  - Status: Open
-  - Opened: Pre (2026-03-30)
-
 - **[Pre-S02] No application-level authentication**
   - Severity: Critical
   - File: `app/api/` (most GET routes)
-  - Description: Read routes return rich operational data -- config, sessions, agent activity, stats, skills -- without any auth check. The operator elevation layer exists but is opt-in per handler.
-  - Remediation: Apply `requireSensitiveRouteAccess` or equivalent to all routes handling sensitive data; consider tiered read auth.
+  - Description: Read routes still expose sensitive operational data without a universal auth boundary.
+  - Remediation: Apply `requireSensitiveRouteAccess` or an equivalent guard to every sensitive route and keep the allowlist under review.
   - Status: Open
   - Opened: Pre (2026-03-30)
 
 - **[Pre-S03] Unauthenticated permanent runtime configuration mutation**
   - Severity: Critical
   - File: `app/api/config/agent-model/route.ts`, `app/api/alerts/route.ts`
-  - Description: Write endpoints can permanently change runtime config. Auth guard added to some but not verified across all mutation paths.
-  - Remediation: Enforce `requireSensitiveRouteAccess` + feature flag on every mutation endpoint; verify no unauthenticated write path remains.
+  - Description: Mutation coverage exists for the Phase 00 baseline, but the broader write surface still needs complete enforcement.
+  - Remediation: Enforce `requireSensitiveRouteAccess` plus feature flags on every mutation endpoint and verify no unauthenticated write path remains.
   - Status: Open
   - Opened: Pre (2026-03-30)
 
 - **[Pre-S04] Unauthenticated outbound messaging to real users**
   - Severity: Critical
   - File: `app/api/test-session/route.ts`, `app/api/test-dm-sessions/route.ts`
-  - Description: Test endpoints can send real messages to external platforms without auth or feature-flag gating.
-  - Remediation: Gate behind `ENABLE_OUTBOUND_TESTS` + `requireSensitiveRouteAccess`; default to dry-run.
-  - Status: Open
-  - Opened: Pre (2026-03-30)
-
-- **[Pre-S05] Zero-click side-effect triggering via GET aliases**
-  - Severity: Critical
-  - File: Multiple `route.ts` handlers
-  - Description: Several side-effect routes accept GET, enabling zero-click exploitation via link injection or image tags.
-  - Remediation: Remove GET handlers from all side-effect routes; return 405 for GET on mutation endpoints.
+  - Description: Outbound messaging remains a high-risk capability that must stay tightly gated and reviewable.
+  - Remediation: Keep live-send behind `ENABLE_OUTBOUND_TESTS` plus `requireSensitiveRouteAccess`, with dry-run as the default path.
   - Status: Open
   - Opened: Pre (2026-03-30)
 
 - **[Pre-S06] Path traversal via unvalidated `[agentId]` URL segments**
   - Severity: High
   - File: `app/api/sessions/[agentId]/route.ts`, `app/api/stats/[agentId]/route.ts`
-  - Description: `agentId` param from URL is used in filesystem path construction without validation. `../` sequences can escape the intended directory.
-  - Remediation: Validate `agentId` against an allowlist of known agent names or enforce strict character/pattern rules; reject traversal sequences.
+  - Description: `agentId` values still need strict validation before any filesystem path construction.
+  - Remediation: Enforce an allowlist or strict pattern and reject traversal sequences.
   - Status: Open
   - Opened: Pre (2026-03-30)
 
 - **[Pre-S07] CSRF on all mutating endpoints**
   - Severity: High
   - File: All POST/PUT/PATCH/DELETE routes
-  - Description: No Origin or CSRF token validation on mutation routes. Authenticated operator sessions can be exploited via cross-origin requests.
-  - Remediation: Add Origin header validation or SameSite cookie enforcement; reject cross-origin mutation requests.
+  - Description: Mutation routes still need explicit origin or CSRF defenses.
+  - Remediation: Add Origin validation or a dedicated CSRF strategy and reject cross-origin mutations.
   - Status: Open
   - Opened: Pre (2026-03-30)
 
 - **[Pre-S08] LLM API credit exhaustion and self-SSRF amplification**
   - Severity: High
   - File: `lib/model-probe.ts`, `app/api/alerts/check/route.ts`
-  - Description: Provider probe and alert-check endpoints can trigger LLM API calls and self-referencing HTTP requests without rate limits or auth gates.
-  - Remediation: Gate behind feature flags + auth; add rate limits; remove self-SSRF patterns in alert check.
+  - Description: Provider probe and alert-check flows still require stronger throttling and SSRF resistance.
+  - Remediation: Keep these routes behind feature flags and auth, add rate limits, and remove self-SSRF patterns.
   - Status: Open
   - Opened: Pre (2026-03-30)
 
 - **[Pre-S09] External platform rate limit lockout**
   - Severity: High
   - File: `app/api/test-session/route.ts`, `app/api/test-dm-sessions/route.ts`
-  - Description: Unthrottled test endpoints can exhaust external platform rate limits, locking out the operator's real bot accounts.
-  - Remediation: Rate limit test endpoints; require auth and feature flags.
-  - Status: Open
-  - Opened: Pre (2026-03-30)
-
-- **[Pre-S10] Docker default binds to all network interfaces**
-  - Severity: High
-  - File: `Dockerfile` (line 25: `ENV HOSTNAME="0.0.0.0"`)
-  - Description: Default `HOSTNAME=0.0.0.0` exposes the origin on all interfaces. README documents loopback override but Dockerfile ships the unsafe default.
-  - Remediation: Change Dockerfile default to `127.0.0.1` or document mandatory override; align Docker guidance.
+  - Description: Diagnostic traffic can still threaten external platform rate limits if it is not bounded tightly enough.
+  - Remediation: Keep rate limits in place and preserve the auth/feature-flag gate.
   - Status: Open
   - Opened: Pre (2026-03-30)
 
 - **[Pre-S11] Attacker-controlled inputs forwarded to gateway**
   - Severity: High
   - File: `app/api/config/agent-model/route.ts`, session and test routes
-  - Description: URL params and request body values are forwarded to OpenClaw gateway CLI calls without sanitization.
+  - Description: Route inputs still need strict sanitization before they are forwarded to OpenClaw gateway calls.
   - Remediation: Validate and sanitize all user inputs before gateway invocation; use allowlists for known parameters.
   - Status: Open
   - Opened: Pre (2026-03-30)
@@ -117,45 +93,180 @@ Canonical definitions: `.spec_system/PRD/PRD.md` Appendix A. Live status: `docs/
 - **[Pre-S12] AlertMonitor auto-triggers full attack pipeline on every page load**
   - Severity: High
   - File: `app/alert-monitor.tsx`
-  - Description: Client component fires alert-check and gateway-health requests on every mount. Unauthenticated, these requests amplify the abuse surface with every page navigation.
-  - Remediation: Gate client-side polling behind auth status check; deduplicate across tabs; add backoff.
+  - Description: Client-side polling remains an abuse multiplier until it is fully auth-aware and backoff-limited.
+  - Remediation: Gate polling behind auth status checks, deduplicate across tabs, and add backoff.
   - Status: Open
   - Opened: Pre (2026-03-30)
 
 - **[Pre-S13] Uncached heavy endpoints with cascading unbounded reads**
   - Severity: High
   - File: `app/api/stats-all/route.ts`, `app/api/activity-heatmap/route.ts`
-  - Description: Analytics endpoints perform unbounded filesystem scans on every request with no caching or concurrency limits.
-  - Remediation: Add response caching with stampede protection; impose file-count and size limits.
+  - Description: Read-heavy analytics endpoints still need bounded caching and concurrency control.
+  - Remediation: Add response caching with stampede protection and impose file-count and size limits.
   - Status: Open
   - Opened: Pre (2026-03-30)
 
 ### Medium / Low
 
-| ID | Severity | Title | File(s) | Status |
-|----|----------|-------|---------|--------|
-| Pre-S14 | Medium | Missing security response headers | `middleware.ts` (partial coverage) | Open |
-| Pre-S15 | Medium | Platform identity metadata and user IDs disclosed | `app/api/config/route.ts` responses | Open |
-| Pre-S16 | Medium | Absolute filesystem paths in skill listings | `lib/openclaw-skills.ts` | Open |
-| Pre-S17 | Medium | Synchronous I/O blocks Node.js event loop | Multiple route handlers | Open |
-| Pre-S18 | Medium | No input validation on write payloads | Alert, pixel-office, model mutation routes | Open |
-| Pre-S19 | Medium | Duplicate CLI bridge with divergent behavior | `lib/model-probe.ts` vs `lib/openclaw-cli.ts` | Open |
-| Pre-S20 | Medium | CLI output injection via `parseJsonFromMixedOutput` | `lib/openclaw-cli.ts` | Open |
-| Pre-S21 | Medium | Unbounded file reads without size limits | Session and skill content routes | Open |
-| Pre-S22 | Medium | `resolveCronStorePath` follows arbitrary config-sourced paths | Cron-related route helpers | Open |
-| Pre-S23 | Medium | Random-based cron alert logic sends real notifications | `app/api/alerts/check/route.ts` | Open |
-| Pre-S24 | Medium | Platform credentials exercised without auth | Test and probe routes | Open |
-| Pre-S25 | Medium | GitHub API rate limit exhaustible via cache bypass | `app/api/pixel-office/version/route.ts` | Open |
-| Pre-S26 | Low | Error responses leak internal filesystem paths | Multiple error handlers | Open |
-| Pre-S27 | Low | Non-atomic alert config write | `app/api/alerts/route.ts` | Open |
-| Pre-S28 | Low | Config cache returns mutable reference | `lib/config-cache.ts` | Open |
-| Pre-S29 | Low | Dormant Windows shell injection in `quoteShellArg` | `lib/openclaw-cli.ts` | Open |
-| Pre-S30 | Low | Environment variable overrides redirect all filesystem reads | `lib/openclaw-paths.ts` | Open |
-| Pre-S31 | Low | Uncaught `JSON.parse` crashes skills route | `app/api/skills/route.ts` | Open |
-| Pre-S32 | Low | `localStorage` accumulates indefinitely | Client-side state management | Open |
-| Pre-S33 | Low | Operational and reconnaissance intelligence leakage | Stats, config, and health responses | Open |
-| Pre-S34 | Low | Code quality issues with security implications | Multiple files | Open |
-| Pre-S35 | Low | Cron and operational metadata exposed | Stats and health responses | Open |
+- **[Pre-S14] Missing security response headers**
+  - Severity: Medium
+  - File: `middleware.ts` (partial coverage)
+  - Description: Header coverage is still incomplete.
+  - Remediation: Tighten the response-header set after the remaining route hardening stabilizes.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S17] Synchronous I/O blocks Node.js event loop**
+  - Severity: Medium
+  - File: Multiple route handlers
+  - Description: Hot-path sync reads still block the event loop.
+  - Remediation: Move the remaining request-time reads to `fs/promises`.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S18] No input validation on write payloads**
+  - Severity: Medium
+  - File: Alert, pixel-office, model mutation routes
+  - Description: Write payload validation is still incomplete outside the Phase 00 baseline.
+  - Remediation: Add schema validation and payload-size limits before any persistent write or gateway call.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S19] Duplicate CLI bridge with divergent behavior**
+  - Severity: Medium
+  - File: `lib/model-probe.ts` vs `lib/openclaw-cli.ts`
+  - Description: Bridge logic still exists in more than one place.
+  - Remediation: Consolidate around the canonical bridge and remove copy drift.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S20] CLI output injection via `parseJsonFromMixedOutput`**
+  - Severity: Medium
+  - File: `lib/openclaw-cli.ts`
+  - Description: Mixed-output parsing still needs hardening.
+  - Remediation: Treat non-JSON output as untrusted and keep parsing bounded and defensive.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S21] Unbounded file reads without size limits**
+  - Severity: Medium
+  - File: Session and skill content routes
+  - Description: Large reads can still overwhelm the server.
+  - Remediation: Add file-size and concurrency bounds before reading large content.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S22] `resolveCronStorePath` follows arbitrary config-sourced paths**
+  - Severity: Medium
+  - File: Cron-related route helpers
+  - Description: Cron path resolution still trusts config values too much.
+  - Remediation: Enforce a strict path boundary and approved-directory allowlist.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S23] Random-based cron alert logic sends real notifications**
+  - Severity: Medium
+  - File: `app/api/alerts/check/route.ts`
+  - Description: Randomized notification behavior still needs deterministic control.
+  - Remediation: Remove random-send behavior or keep it behind explicit opt-in test controls.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S24] Platform credentials exercised without auth**
+  - Severity: Medium
+  - File: Test and probe routes
+  - Description: Diagnostic routes still represent a sensitive credential-exercising surface.
+  - Remediation: Keep them behind auth and feature flags, and preserve dry-run defaults.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S25] GitHub API rate limit exhaustible via cache bypass**
+  - Severity: Medium
+  - File: `app/api/pixel-office/version/route.ts`
+  - Description: Release checks still need persistent cache discipline.
+  - Remediation: Add cache protection and avoid repeated release probes on demand.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S26] Error responses leak internal filesystem paths**
+  - Severity: Low
+  - File: Multiple error handlers
+  - Description: Some errors still reveal internal path details.
+  - Remediation: Normalize client-facing errors and redact internal paths.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S27] Non-atomic alert config write**
+  - Severity: Low
+  - File: `app/api/alerts/route.ts`
+  - Description: Alert writes still need crash-safe persistence.
+  - Remediation: Switch to rename-and-swap writes.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S28] Config cache returns mutable reference**
+  - Severity: Low
+  - File: `lib/config-cache.ts`
+  - Description: Shared cache objects can still be mutated by callers.
+  - Remediation: Return clones or enforce immutability before mutation points.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S29] Dormant Windows shell injection in `quoteShellArg`**
+  - Severity: Low
+  - File: `lib/openclaw-cli.ts`
+  - Description: Windows shell escaping remains fragile.
+  - Remediation: Harden the helper or remove the shell path entirely.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S30] Environment variable overrides redirect all filesystem reads**
+  - Severity: Low
+  - File: `lib/openclaw-paths.ts`
+  - Description: Environment overrides still need a path boundary.
+  - Remediation: Validate overrides against approved directories before any read.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S31] Uncaught `JSON.parse` crashes skills route**
+  - Severity: Low
+  - File: `app/api/skills/route.ts`
+  - Description: Malformed JSON still needs safer parsing and error handling.
+  - Remediation: Catch parse failures and return sanitized errors.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S32] `localStorage` accumulates indefinitely**
+  - Severity: Low
+  - File: Client-side state management
+  - Description: Browser state still needs bounding and pruning.
+  - Remediation: Add expiration and size limits.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S33] Operational and reconnaissance intelligence leakage**
+  - Severity: Low
+  - File: Stats, config, and health responses
+  - Description: Responses still reveal more operational metadata than the dashboard needs.
+  - Remediation: Continue trimming browser-visible telemetry and internal detail.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S34] Code quality issues with security implications**
+  - Severity: Low
+  - File: Multiple files
+  - Description: Small quality issues still carry security impact when they sit on request paths.
+  - Remediation: Keep cleanup tied to security-sensitive code changes.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
+
+- **[Pre-S35] Cron and operational metadata exposed**
+  - Severity: Low
+  - File: Stats and health responses
+  - Description: Operational detail still leaks through read paths.
+  - Remediation: Reduce exposed metadata to the minimum needed for operators.
+  - Status: Open
+  - Opened: Pre (2026-03-30)
 
 ---
 
@@ -163,7 +274,7 @@ Canonical definitions: `.spec_system/PRD/PRD.md` Appendix A. Live status: `docs/
 
 ### Overall: NON-COMPLIANT
 
-The dashboard reads and displays data from the local OpenClaw runtime that may include personal data from external platform users. No consent, deletion, or minimization controls exist yet.
+The dashboard still reads and displays data from the local OpenClaw runtime that may include personal data from external platform users. Phase 00 removed the browser-visible gateway token, absolute filesystem paths, and some identity metadata, but the app still needs minimization, deletion, and logging controls before it can be considered compliant.
 
 ### Personal Data Inventory
 
@@ -178,12 +289,12 @@ The dashboard reads and displays data from the local OpenClaw runtime that may i
 
 | Requirement | Status | Notes |
 |------------|--------|-------|
-| Data collection has documented purpose | PARTIAL | Operator monitoring documented; third-party user data handling undocumented |
-| Consent obtained before data storage | N/A | Dashboard reads existing data; does not collect new PII from data subjects |
-| Data minimization verified | FAIL | API responses expose full platform IDs, usernames, and filesystem paths (SYN-15, SYN-16) |
-| Deletion/erasure path exists | FAIL | No mechanism to delete or anonymize session/user data from dashboard |
-| No PII in application logs | FAIL | Pino logger has no PII filtering; platform identifiers may appear in server logs |
-| Third-party transfers documented | PARTIAL | Outbound test routes can send data to external platforms; not documented as data transfers |
+| Data collection has documented purpose | PARTIAL | Operator monitoring is documented; third-party user data handling is still only partially described. |
+| Consent obtained before data storage | N/A | The dashboard reads existing data; it does not collect new PII from data subjects. |
+| Data minimization verified | FAIL | Phase 00 reduced browser-visible leakage, but additional operational metadata and read-path exposure remain. |
+| Deletion/erasure path exists | FAIL | No mechanism exists to delete or anonymize session/user data from the dashboard. |
+| No PII in application logs | FAIL | Pino logging still needs PII and secret filtering enforcement. |
+| Third-party transfers documented | PARTIAL | Outbound test routes can send data to external platforms; the transfer story is still incomplete. |
 
 ---
 
@@ -191,7 +302,7 @@ The dashboard reads and displays data from the local OpenClaw runtime that may i
 
 ### Current Vulnerabilities
 
-No known CVEs in current dependency versions as of baseline date. Key packages:
+No known CVEs in current dependency versions as of the Phase 00 update date. Key packages:
 
 | Package | Version | Notes |
 |---------|---------|-------|
@@ -201,13 +312,19 @@ No known CVEs in current dependency versions as of baseline date. Key packages:
 | pino-pretty | ^13.1.3 | Listed as production dep; should be devDependency |
 | @biomejs/biome | ^2.4.10 | Dev only |
 
-No `npm audit` run was performed during this baseline. Recommend running `npm audit` in Phase 00 Session 01.
+No `npm audit` run was recorded in the phase summaries. Run one in a later validation pass if the dependency set changes.
 
 ---
 
 ## Resolved Findings
 
-No resolved findings yet.
+| ID | Severity | Title | Resolution |
+|----|----------|-------|------------|
+| [P00-S01] | Critical | Gateway auth token leaked to any network client | Removed `gateway.token` from browser-visible payloads and shifted launch handling to same-origin server mediation. |
+| [P00-S05] | Critical | Zero-click side-effect triggering via `GET` aliases | Removed GET aliases from side-effect routes and return 405 for side-effect GET requests. |
+| [P00-S10] | High | Docker default binds to all network interfaces | Changed the Dockerfile default bind to `127.0.0.1` and aligned deployment guidance. |
+| [P00-S15] | Medium | Platform identity metadata and user IDs disclosed | Sanitized browser-visible config and health payloads so identity-only fields stay server-side. |
+| [P00-S16] | Medium | Absolute filesystem paths in skill listings | Sanitized skills responses so browser-visible data no longer exposes absolute filesystem paths. |
 
 ---
 
@@ -216,19 +333,19 @@ No resolved findings yet.
 | Phase | Sessions | Security | GDPR | Findings Opened | Findings Closed |
 |-------|----------|----------|------|-----------------|-----------------|
 | Pre-00 | 0 (baseline) | AT RISK | NON-COMPLIANT | 35 | 0 |
+| P00 | 3 | AT RISK | NON-COMPLIANT | 35 | 5 |
 
 ---
 
 ## Recommendations
 
-Actionable items for Phase 00 based on the audit baseline.
+Actionable items for the next phase.
 
-1. **Prioritize SYN-01 (token leakage)**: Gateway token in API responses is the single highest-impact finding. Strip from `/api/config` and `/api/gateway-health` responses before any other work.
-2. **Extend `requireSensitiveRouteAccess` to all sensitive routes**: The guard exists and works -- the gap is coverage, not implementation. Audit every `route.ts` for opt-in.
-3. **Run `npm audit`**: No dependency audit has been recorded. Run and document before Phase 00 begins.
-4. **Change Dockerfile default to `127.0.0.1`**: The current `0.0.0.0` default contradicts the security posture. Fix is a one-line change.
-5. **Add PII filtering to Pino logger**: Before structured logging expands, ensure platform identifiers and operator secrets cannot appear in log output.
-6. **Tighten CSP**: Remove `unsafe-eval` from script-src once client-side hardening stabilizes. Keep `unsafe-inline` only if Tailwind or Next.js requires it.
+1. **Prioritize the remaining auth and write-path gaps**: The Phase 00 baseline is in place, but Phase 01 still needs the broader route-boundary and origin-validation work.
+2. **Tighten the heavy read paths**: Phase 02 should focus on caching, file-size limits, and sync-I/O removal.
+3. **Run `npm audit` during a later validation pass**: The phase summaries did not record a dependency audit.
+4. **Keep PII filtering on the security backlog**: Logging and browser-visible metadata still need explicit minimization.
+5. **Continue updating the live findings register**: Keep `docs/SECURITY_FINDINGS.md` synchronized with the PRD and phase closeouts.
 
 ---
 

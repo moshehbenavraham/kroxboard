@@ -1,7 +1,16 @@
 import fs from "node:fs";
 import { NextResponse } from "next/server";
 import { OPENCLAW_CONFIG_PATH } from "@/lib/openclaw-paths";
-import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
+import {
+	applyDiagnosticRateLimitHeaders,
+	enforceDiagnosticRateLimit,
+} from "@/lib/security/diagnostic-rate-limit";
+import { requireFeatureFlag } from "@/lib/security/feature-flags";
+import {
+	createInvalidRequestBoundaryResponse,
+	validateSessionDiagnosticInput,
+} from "@/lib/security/request-boundary";
+import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
 import {
 	parseApiJsonSafely,
 	shouldFallbackToCli,
@@ -11,17 +20,22 @@ import {
 const CONFIG_PATH = OPENCLAW_CONFIG_PATH;
 
 export async function POST(req: Request) {
-	const access = requireSensitiveRouteAccess(req);
+	const access = requireSensitiveMutationAccess(req, {
+		allowedMethods: ["POST"],
+	});
 	if (!access.ok) return access.response;
+	const feature = requireFeatureFlag("ENABLE_OUTBOUND_TESTS");
+	if (!feature.ok) return feature.response;
 
 	try {
-		const { sessionKey, agentId } = await req.json();
-		if (!sessionKey || !agentId) {
-			return NextResponse.json(
-				{ error: "Missing sessionKey or agentId" },
-				{ status: 400 },
-			);
+		const body = await req.json().catch(() => null);
+		const input = validateSessionDiagnosticInput(body);
+		if (!input.ok) {
+			return createInvalidRequestBoundaryResponse(input.error);
 		}
+		const { sessionKey, agentId } = input.value;
+		const rateLimit = enforceDiagnosticRateLimit(req, "session_diagnostic");
+		if (!rateLimit.ok) return rateLimit.response;
 
 		// Read gateway config
 		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
@@ -61,51 +75,63 @@ export async function POST(req: Request) {
 			if (!resp.ok) {
 				if (shouldFallbackToCli(resp, rawText)) {
 					const fallback = await testSessionViaCli(agentId);
-					return NextResponse.json({
-						status: fallback.ok ? "ok" : "error",
-						sessionKey,
-						elapsed: fallback.elapsed,
-						reply: fallback.reply,
-						error: fallback.error,
-					});
+					return applyDiagnosticRateLimitHeaders(
+						NextResponse.json({
+							status: fallback.ok ? "ok" : "error",
+							sessionKey,
+							elapsed: fallback.elapsed,
+							reply: fallback.reply,
+							error: fallback.error,
+						}),
+						rateLimit.metadata,
+					);
 				}
-				return NextResponse.json({
-					status: "error",
-					sessionKey,
-					elapsed,
-					error: data?.error?.message || rawText || JSON.stringify(data),
-				});
+				return applyDiagnosticRateLimitHeaders(
+					NextResponse.json({
+						status: "error",
+						sessionKey,
+						elapsed,
+						error: data?.error?.message || rawText || JSON.stringify(data),
+					}),
+					rateLimit.metadata,
+				);
 			}
 
 			const reply = data.choices?.[0]?.message?.content || "";
-			return NextResponse.json({
-				status: "ok",
-				sessionKey,
-				elapsed,
-				reply: reply.slice(0, 200) || "(no reply)",
-			});
+			return applyDiagnosticRateLimitHeaders(
+				NextResponse.json({
+					status: "ok",
+					sessionKey,
+					elapsed,
+					reply: reply.slice(0, 200) || "(no reply)",
+				}),
+				rateLimit.metadata,
+			);
 		} catch (err: unknown) {
 			const elapsed = Date.now() - startTime;
 			const isTimeout =
 				err instanceof Error &&
 				(err.name === "TimeoutError" || err.name === "AbortError");
-			return NextResponse.json({
-				status: "error",
-				sessionKey,
-				elapsed,
-				error: isTimeout
-					? "Timeout: agent not responding (100s)"
-					: (err instanceof Error ? err.message : "Unknown error").slice(
-							0,
-							300,
-						),
-			});
+			return applyDiagnosticRateLimitHeaders(
+				NextResponse.json({
+					status: "error",
+					sessionKey,
+					elapsed,
+					error: isTimeout
+						? "Timeout: agent not responding (100s)"
+						: (err instanceof Error ? err.message : "Unknown error").slice(
+								0,
+								300,
+							),
+				}),
+				rateLimit.metadata,
+			);
 		}
-	} catch (err: unknown) {
+	} catch {
 		return NextResponse.json(
 			{
 				status: "error",
-				error: err instanceof Error ? err.message : String(err),
+				error: "Session diagnostic failed",
 			},
 			{ status: 500 },
 		);

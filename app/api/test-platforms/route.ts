@@ -3,9 +3,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { NextResponse } from "next/server";
-import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import {
+	isValidOpenclawAgentId,
+	OPENCLAW_CONFIG_PATH,
+	OPENCLAW_HOME,
+	resolveOpenclawAgentSessionsFile,
+} from "@/lib/openclaw-paths";
 import { shouldHidePlatformChannel } from "@/lib/platforms";
-import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
+import {
+	applyDiagnosticRateLimitHeaders,
+	enforceDiagnosticRateLimit,
+} from "@/lib/security/diagnostic-rate-limit";
+import { resolveOutboundDiagnosticAccess } from "@/lib/security/feature-flags";
+import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
+import type { DiagnosticMetadata } from "@/lib/security/types";
 
 const CONFIG_PATH = OPENCLAW_CONFIG_PATH;
 const QQBOT_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";
@@ -21,6 +32,7 @@ const importExternalModule = new Function(
 	"modulePath",
 	"return import(modulePath)",
 ) as (modulePath: string) => Promise<any>;
+const platformDiagnosticsInFlight = new Set<string>();
 
 interface PlatformTestResult {
 	agentId: string;
@@ -35,6 +47,21 @@ interface PlatformTestResult {
 interface YuanbaoDmContext {
 	target: string;
 	accountId: string | null;
+}
+
+function readAgentSessions(agentId: string): Record<string, unknown> | null {
+	const sessionsPath = resolveOpenclawAgentSessionsFile(agentId);
+	if (!sessionsPath || !fs.existsSync(sessionsPath)) return null;
+
+	try {
+		const raw = fs.readFileSync(sessionsPath, "utf-8");
+		const parsed = JSON.parse(raw);
+		return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+			? (parsed as Record<string, unknown>)
+			: null;
+	} catch {
+		return null;
+	}
 }
 
 function runOpenClawMessageSend(
@@ -135,29 +162,22 @@ function runCurlJson(
 // Find the most recent feishu DM user open_id for a given agent
 // Each feishu app has its own open_id namespace, so we must use per-agent open_ids
 function getFeishuDmUser(agentId: string): string | null {
-	try {
-		const sessionsPath = path.join(
-			OPENCLAW_HOME,
-			`agents/${agentId}/sessions/sessions.json`,
-		);
-		const raw = fs.readFileSync(sessionsPath, "utf-8");
-		const sessions = JSON.parse(raw);
-		let bestId: string | null = null;
-		let bestTime = 0;
-		for (const [key, val] of Object.entries(sessions)) {
-			const m = key.match(/^agent:[^:]+:feishu:direct:(ou_[a-f0-9]+)$/);
-			if (m) {
-				const updatedAt = (val as any).updatedAt || 0;
-				if (updatedAt > bestTime) {
-					bestTime = updatedAt;
-					bestId = m[1];
-				}
+	const sessions = readAgentSessions(agentId);
+	if (!sessions) return null;
+
+	let bestId: string | null = null;
+	let bestTime = 0;
+	for (const [key, val] of Object.entries(sessions)) {
+		const m = key.match(/^agent:[^:]+:feishu:direct:(ou_[a-f0-9]+)$/);
+		if (m) {
+			const updatedAt = (val as any).updatedAt || 0;
+			if (updatedAt > bestTime) {
+				bestTime = updatedAt;
+				bestId = m[1];
 			}
 		}
-		return bestId;
-	} catch {
-		return null;
 	}
+	return bestId;
 }
 
 // Feishu: get token -> verify bot info -> send a real DM
@@ -168,6 +188,7 @@ async function testFeishu(
 	appSecret: string,
 	domain: string,
 	testUserId: string | null,
+	diagnostic: DiagnosticMetadata,
 ): Promise<PlatformTestResult> {
 	const baseUrl =
 		domain === "lark" ? "https://open.larksuite.com" : "https://open.feishu.cn";
@@ -219,6 +240,20 @@ async function testFeishu(
 		}
 
 		const botName = botData.bot.bot_name || accountId;
+
+		if (diagnostic.mode === "dry_run") {
+			const elapsed = Date.now() - startTime;
+			return {
+				agentId,
+				platform: "feishu",
+				accountId,
+				ok: true,
+				detail: testUserId
+					? `${botName} dry-run OK (${elapsed}ms, DM not sent)`
+					: `${botName} dry-run OK (${elapsed}ms, no DM session found)`,
+				elapsed,
+			};
+		}
 
 		// Step 3: send a real DM to test user
 		if (!testUserId) {
@@ -294,6 +329,7 @@ async function testDiscord(
 	botToken: string,
 	testUserId: string | null,
 	recipientSource: "session" | "allowFrom" | "none",
+	diagnostic: DiagnosticMetadata,
 ): Promise<PlatformTestResult> {
 	const startTime = Date.now();
 
@@ -314,6 +350,21 @@ async function testDiscord(
 		}
 
 		const botName = `${meData.username}#${meData.discriminator || "0"}`;
+
+		if (diagnostic.mode === "dry_run") {
+			const elapsed = Date.now() - startTime;
+			const sourceLabel =
+				recipientSource === "allowFrom" ? "allowFrom" : "session";
+			return {
+				agentId,
+				platform: "discord",
+				ok: true,
+				detail: testUserId
+					? `${botName} dry-run OK (${elapsed}ms, via ${sourceLabel}, DM not sent)`
+					: `${botName} dry-run OK (${elapsed}ms, no DM target configured)`,
+				elapsed,
+			};
+		}
 
 		if (!testUserId) {
 			return {
@@ -399,29 +450,22 @@ async function testDiscord(
 }
 
 function getDiscordDmUser(agentId: string): string | null {
-	try {
-		const sessionsPath = path.join(
-			OPENCLAW_HOME,
-			`agents/${agentId}/sessions/sessions.json`,
-		);
-		const raw = fs.readFileSync(sessionsPath, "utf-8");
-		const sessions = JSON.parse(raw);
-		let bestId: string | null = null;
-		let bestTime = 0;
-		for (const [key, val] of Object.entries(sessions)) {
-			const m = key.match(/^agent:[^:]+:discord:direct:(.+)$/);
-			if (m) {
-				const updatedAt = (val as any).updatedAt || 0;
-				if (updatedAt > bestTime) {
-					bestTime = updatedAt;
-					bestId = m[1];
-				}
+	const sessions = readAgentSessions(agentId);
+	if (!sessions) return null;
+
+	let bestId: string | null = null;
+	let bestTime = 0;
+	for (const [key, val] of Object.entries(sessions)) {
+		const m = key.match(/^agent:[^:]+:discord:direct:(.+)$/);
+		if (m) {
+			const updatedAt = (val as any).updatedAt || 0;
+			if (updatedAt > bestTime) {
+				bestTime = updatedAt;
+				bestId = m[1];
 			}
 		}
-		return bestId;
-	} catch {
-		return null;
 	}
+	return bestId;
 }
 
 function getDiscordAllowlistUser(discordConfig: any): string | null {
@@ -437,30 +481,23 @@ function getDiscordAllowlistUser(discordConfig: any): string | null {
 }
 
 function getChannelDmUser(agentId: string, channel: string): string | null {
-	try {
-		const sessionsPath = path.join(
-			OPENCLAW_HOME,
-			`agents/${agentId}/sessions/sessions.json`,
-		);
-		const raw = fs.readFileSync(sessionsPath, "utf-8");
-		const sessions = JSON.parse(raw);
-		let bestId: string | null = null;
-		let bestTime = 0;
-		const pattern = new RegExp(`^agent:[^:]+:${channel}:direct:(.+)$`);
-		for (const [key, val] of Object.entries(sessions)) {
-			const m = key.match(pattern);
-			if (m) {
-				const updatedAt = (val as any).updatedAt || 0;
-				if (updatedAt > bestTime) {
-					bestTime = updatedAt;
-					bestId = m[1];
-				}
+	const sessions = readAgentSessions(agentId);
+	if (!sessions) return null;
+
+	let bestId: string | null = null;
+	let bestTime = 0;
+	const pattern = new RegExp(`^agent:[^:]+:${channel}:direct:(.+)$`);
+	for (const [key, val] of Object.entries(sessions)) {
+		const m = key.match(pattern);
+		if (m) {
+			const updatedAt = (val as any).updatedAt || 0;
+			if (updatedAt > bestTime) {
+				bestTime = updatedAt;
+				bestId = m[1];
 			}
 		}
-		return bestId;
-	} catch {
-		return null;
 	}
+	return bestId;
 }
 
 function stripChannelTarget(
@@ -475,47 +512,40 @@ function stripChannelTarget(
 }
 
 function getYuanbaoDmContext(agentId: string): YuanbaoDmContext | null {
-	try {
-		const sessionsPath = path.join(
-			OPENCLAW_HOME,
-			`agents/${agentId}/sessions/sessions.json`,
-		);
-		const raw = fs.readFileSync(sessionsPath, "utf-8");
-		const sessions = JSON.parse(raw);
-		let best: YuanbaoDmContext | null = null;
-		let bestTime = 0;
+	const sessions = readAgentSessions(agentId);
+	if (!sessions) return null;
 
-		for (const [key, val] of Object.entries(sessions)) {
-			const match = key.match(/^agent:[^:]+:yuanbao:direct:(.+)$/);
-			if (!match) continue;
-			const session = val as any;
-			const updatedAt = session?.updatedAt || 0;
-			if (updatedAt <= bestTime) continue;
+	let best: YuanbaoDmContext | null = null;
+	let bestTime = 0;
 
-			const target =
-				stripChannelTarget(session?.deliveryContext?.to, "yuanbao") ||
-				stripChannelTarget(session?.origin?.to, "yuanbao") ||
-				match[1];
-			if (!target) continue;
+	for (const [key, val] of Object.entries(sessions)) {
+		const match = key.match(/^agent:[^:]+:yuanbao:direct:(.+)$/);
+		if (!match) continue;
+		const session = val as any;
+		const updatedAt = session?.updatedAt || 0;
+		if (updatedAt <= bestTime) continue;
 
-			bestTime = updatedAt;
-			best = {
-				target,
-				accountId:
-					typeof session?.deliveryContext?.accountId === "string" &&
-					session.deliveryContext.accountId.trim()
-						? session.deliveryContext.accountId.trim()
-						: typeof session?.origin?.accountId === "string" &&
-								session.origin.accountId.trim()
-							? session.origin.accountId.trim()
-							: null,
-			};
-		}
+		const target =
+			stripChannelTarget(session?.deliveryContext?.to, "yuanbao") ||
+			stripChannelTarget(session?.origin?.to, "yuanbao") ||
+			match[1];
+		if (!target) continue;
 
-		return best;
-	} catch {
-		return null;
+		bestTime = updatedAt;
+		best = {
+			target,
+			accountId:
+				typeof session?.deliveryContext?.accountId === "string" &&
+				session.deliveryContext.accountId.trim()
+					? session.deliveryContext.accountId.trim()
+					: typeof session?.origin?.accountId === "string" &&
+							session.origin.accountId.trim()
+						? session.origin.accountId.trim()
+						: null,
+		};
 	}
+
+	return best;
 }
 
 function resolveYuanbaoTestAccount(
@@ -642,37 +672,57 @@ function getChannelAllowlistUser(channelConfig: any): string | null {
 
 // Find the most recent telegram DM chat_id for a given agent
 function getTelegramDmUser(agentId: string): string | null {
-	try {
-		const sessionsPath = path.join(
-			OPENCLAW_HOME,
-			`agents/${agentId}/sessions/sessions.json`,
-		);
-		const raw = fs.readFileSync(sessionsPath, "utf-8");
-		const sessions = JSON.parse(raw);
-		let bestId: string | null = null;
-		let bestTime = 0;
-		for (const [key, val] of Object.entries(sessions)) {
-			const m = key.match(/^agent:[^:]+:telegram:direct:(.+)$/);
-			if (m) {
-				const updatedAt = (val as any).updatedAt || 0;
-				if (updatedAt > bestTime) {
-					bestTime = updatedAt;
-					bestId = m[1];
-				}
+	const sessions = readAgentSessions(agentId);
+	if (!sessions) return null;
+
+	let bestId: string | null = null;
+	let bestTime = 0;
+	for (const [key, val] of Object.entries(sessions)) {
+		const m = key.match(/^agent:[^:]+:telegram:direct:(.+)$/);
+		if (m) {
+			const updatedAt = (val as any).updatedAt || 0;
+			if (updatedAt > bestTime) {
+				bestTime = updatedAt;
+				bestId = m[1];
 			}
 		}
-		return bestId;
-	} catch {
-		return null;
 	}
+	return bestId;
 }
 
 // Telegram: send a real DM through local OpenClaw channel gateway
 async function testTelegram(
 	agentId: string,
+	gatewayPort: number,
+	gatewayToken: string,
 	testChatId: string | null,
+	diagnostic: DiagnosticMetadata,
 ): Promise<PlatformTestResult> {
 	const startTime = Date.now();
+
+	if (diagnostic.mode === "dry_run") {
+		const probe = await _probeGatewayWebUi(gatewayPort, gatewayToken);
+		const elapsed = Date.now() - startTime;
+		if (!probe.ok) {
+			return {
+				agentId,
+				platform: "telegram",
+				ok: false,
+				error: probe.error || "Telegram dry-run probe failed",
+				elapsed,
+			};
+		}
+
+		return {
+			agentId,
+			platform: "telegram",
+			ok: true,
+			detail: testChatId
+				? `Telegram dry-run OK (${elapsed}ms, target ${testChatId}, DM not sent)`
+				: `Telegram gateway reachable (${elapsed}ms, dry-run only, no DM target configured)`,
+			elapsed,
+		};
+	}
 
 	if (!testChatId) {
 		return {
@@ -719,6 +769,7 @@ async function testYuanbao(
 	channelConfig: any,
 	testUserId: string | null,
 	recipientSource: "session" | "allowFrom" | "none",
+	diagnostic: DiagnosticMetadata,
 	preferredAccountId?: string | null,
 ): Promise<PlatformTestResult> {
 	const startTime = Date.now();
@@ -827,6 +878,22 @@ async function testYuanbao(
 			wsClient.connect();
 		});
 
+		if (diagnostic.mode === "dry_run") {
+			const elapsed = Date.now() - startTime;
+			const sourceLabel =
+				recipientSource === "allowFrom" ? "allowFrom" : "session";
+			return {
+				agentId,
+				platform: "yuanbao",
+				accountId,
+				ok: true,
+				detail: testUserId
+					? `Yuanbao dry-run OK (${elapsed}ms, via ${sourceLabel}, real IM not sent)`
+					: `Yuanbao dry-run OK (${elapsed}ms, no recipient configured)`,
+				elapsed,
+			};
+		}
+
 		const now = new Date().toLocaleTimeString("zh-CN", {
 			timeZone: "Asia/Shanghai",
 		});
@@ -888,11 +955,40 @@ async function testYuanbao(
 async function testGenericChannel(
 	agentId: string,
 	channel: string,
+	gatewayPort: number,
+	gatewayToken: string,
 	testUserId: string | null,
 	recipientSource: "session" | "allowFrom" | "none",
+	diagnostic: DiagnosticMetadata,
 ): Promise<PlatformTestResult> {
 	const startTime = Date.now();
 	const displayName = channel.charAt(0).toUpperCase() + channel.slice(1);
+
+	if (diagnostic.mode === "dry_run") {
+		const probe = await _probeGatewayWebUi(gatewayPort, gatewayToken);
+		const elapsed = Date.now() - startTime;
+		if (!probe.ok) {
+			return {
+				agentId,
+				platform: channel,
+				ok: false,
+				error: probe.error || `${displayName} dry-run probe failed`,
+				elapsed,
+			};
+		}
+
+		const sourceLabel =
+			recipientSource === "allowFrom" ? "allowFrom" : "session";
+		return {
+			agentId,
+			platform: channel,
+			ok: true,
+			detail: testUserId
+				? `${displayName} dry-run OK (${elapsed}ms, via ${sourceLabel}, DM not sent)`
+				: `${displayName} gateway reachable (${elapsed}ms, dry-run only, no DM target configured)`,
+			elapsed,
+		};
+	}
 
 	if (!testUserId) {
 		return {
@@ -938,29 +1034,22 @@ async function testGenericChannel(
 
 // Find the most recent whatsapp DM user for a given agent
 function getWhatsappDmUser(agentId: string): string | null {
-	try {
-		const sessionsPath = path.join(
-			OPENCLAW_HOME,
-			`agents/${agentId}/sessions/sessions.json`,
-		);
-		const raw = fs.readFileSync(sessionsPath, "utf-8");
-		const sessions = JSON.parse(raw);
-		let bestId: string | null = null;
-		let bestTime = 0;
-		for (const [key, val] of Object.entries(sessions)) {
-			const m = key.match(/^agent:[^:]+:whatsapp:direct:(.+)$/);
-			if (m) {
-				const updatedAt = (val as any).updatedAt || 0;
-				if (updatedAt > bestTime) {
-					bestTime = updatedAt;
-					bestId = m[1];
-				}
+	const sessions = readAgentSessions(agentId);
+	if (!sessions) return null;
+
+	let bestId: string | null = null;
+	let bestTime = 0;
+	for (const [key, val] of Object.entries(sessions)) {
+		const m = key.match(/^agent:[^:]+:whatsapp:direct:(.+)$/);
+		if (m) {
+			const updatedAt = (val as any).updatedAt || 0;
+			if (updatedAt > bestTime) {
+				bestTime = updatedAt;
+				bestId = m[1];
 			}
 		}
-		return bestId;
-	} catch {
-		return null;
 	}
+	return bestId;
 }
 
 function getWhatsappAllowlistUser(whatsappConfig: any): string | null {
@@ -977,29 +1066,22 @@ function getWhatsappAllowlistUser(whatsappConfig: any): string | null {
 
 // Find the most recent qqbot DM user for a given agent
 function getQqbotDmUser(agentId: string): string | null {
-	try {
-		const sessionsPath = path.join(
-			OPENCLAW_HOME,
-			`agents/${agentId}/sessions/sessions.json`,
-		);
-		const raw = fs.readFileSync(sessionsPath, "utf-8");
-		const sessions = JSON.parse(raw);
-		let bestId: string | null = null;
-		let bestTime = 0;
-		for (const [key, val] of Object.entries(sessions)) {
-			const m = key.match(/^agent:[^:]+:qqbot:direct:(.+)$/);
-			if (m) {
-				const updatedAt = (val as any).updatedAt || 0;
-				if (updatedAt > bestTime) {
-					bestTime = updatedAt;
-					bestId = m[1];
-				}
+	const sessions = readAgentSessions(agentId);
+	if (!sessions) return null;
+
+	let bestId: string | null = null;
+	let bestTime = 0;
+	for (const [key, val] of Object.entries(sessions)) {
+		const m = key.match(/^agent:[^:]+:qqbot:direct:(.+)$/);
+		if (m) {
+			const updatedAt = (val as any).updatedAt || 0;
+			if (updatedAt > bestTime) {
+				bestTime = updatedAt;
+				bestId = m[1];
 			}
 		}
-		return bestId;
-	} catch {
-		return null;
 	}
+	return bestId;
 }
 
 function getQqbotAllowlistUser(
@@ -1148,12 +1230,39 @@ async function getQqbotAccessToken(
 
 async function testWhatsapp(
 	agentId: string,
-	_gatewayPort: number,
-	_gatewayToken: string,
+	gatewayPort: number,
+	gatewayToken: string,
 	testUserId: string | null,
 	recipientSource: "session" | "allowFrom" | "none",
+	diagnostic: DiagnosticMetadata,
 ): Promise<PlatformTestResult> {
 	const startTime = Date.now();
+
+	if (diagnostic.mode === "dry_run") {
+		const probe = await _probeGatewayWebUi(gatewayPort, gatewayToken);
+		const elapsed = Date.now() - startTime;
+		if (!probe.ok) {
+			return {
+				agentId,
+				platform: "whatsapp",
+				ok: false,
+				error: probe.error || "WhatsApp dry-run probe failed",
+				elapsed,
+			};
+		}
+
+		const sourceLabel =
+			recipientSource === "allowFrom" ? "allowFrom" : "session";
+		return {
+			agentId,
+			platform: "whatsapp",
+			ok: true,
+			detail: testUserId
+				? `WhatsApp dry-run OK (${elapsed}ms, via ${sourceLabel}, DM not sent)`
+				: `WhatsApp gateway reachable (${elapsed}ms, dry-run only, no recipient configured)`,
+			elapsed,
+		};
+	}
 
 	if (!testUserId) {
 		return {
@@ -1204,6 +1313,7 @@ async function testQqbot(
 	qqbotAccountId: string | null,
 	testUserId: string | null,
 	recipientSource: "session" | "allowFrom" | "none",
+	diagnostic: DiagnosticMetadata,
 ): Promise<PlatformTestResult> {
 	const startTime = Date.now();
 	const creds = resolveQqbotCredentials(qqbotConfig, qqbotAccountId);
@@ -1229,6 +1339,21 @@ async function testQqbot(
 			ok: false,
 			error: tokenResult.error || "QQBot token probe failed",
 			elapsed: Date.now() - startTime,
+		};
+	}
+
+	if (diagnostic.mode === "dry_run") {
+		const elapsed = Date.now() - startTime;
+		const sourceLabel =
+			recipientSource === "allowFrom" ? "allowFrom" : "session";
+		return {
+			agentId,
+			platform: "qqbot",
+			ok: true,
+			detail: testUserId
+				? `QQBot dry-run OK (${elapsed}ms, account ${creds.accountId}, via ${sourceLabel}, DM not sent)`
+				: `QQBot token OK (${elapsed}ms, account ${creds.accountId}, dry-run only, no DM target configured)`,
+			elapsed,
 		};
 	}
 
@@ -1318,8 +1443,36 @@ async function testQqbot(
 }
 
 export async function POST(request: Request) {
-	const access = requireSensitiveRouteAccess(request);
+	const access = requireSensitiveMutationAccess(request, {
+		allowedMethods: ["POST"],
+	});
 	if (!access.ok) return access.response;
+	const diagnosticAccess = resolveOutboundDiagnosticAccess();
+	if (!diagnosticAccess.ok) return diagnosticAccess.response;
+	const rateLimit = enforceDiagnosticRateLimit(request, "platform_diagnostics");
+	if (!rateLimit.ok) return rateLimit.response;
+	const { diagnostic } = diagnosticAccess;
+	if (platformDiagnosticsInFlight.has(rateLimit.key)) {
+		const headers = new Headers(rateLimit.headers);
+		headers.set("Retry-After", String(rateLimit.metadata.retryAfterSeconds));
+		return NextResponse.json(
+			{
+				ok: false,
+				error:
+					"Platform diagnostics are already running. Wait for the current run to finish.",
+				rateLimit: {
+					ok: false,
+					type: "diagnostic_rate_limit",
+					capability: "platform_diagnostics",
+					message:
+						"Platform diagnostics are already running. Wait for the current run to finish.",
+					metadata: rateLimit.metadata,
+				},
+			},
+			{ status: 429, headers },
+		);
+	}
+	platformDiagnosticsInFlight.add(rateLimit.key);
 
 	try {
 		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
@@ -1346,13 +1499,25 @@ export async function POST(request: Request) {
 		const gatewayPort = config.gateway?.port || 18789;
 		const gatewayToken = config.gateway?.auth?.token || "";
 
-		let agentList = config.agents?.list || [];
+		let agentList = Array.isArray(config.agents?.list)
+			? config.agents.list.filter(
+					(agent: any) =>
+						agent &&
+						typeof agent.id === "string" &&
+						isValidOpenclawAgentId(agent.id.trim()),
+				)
+			: [];
 		if (agentList.length === 0) {
 			try {
 				const agentsDir = path.join(OPENCLAW_HOME, "agents");
 				const dirs = fs.readdirSync(agentsDir, { withFileTypes: true });
 				agentList = dirs
-					.filter((d: any) => d.isDirectory() && !d.name.startsWith("."))
+					.filter(
+						(d: any) =>
+							d.isDirectory() &&
+							!d.name.startsWith(".") &&
+							isValidOpenclawAgentId(d.name),
+					)
 					.map((d: any) => ({ id: d.name }));
 			} catch {}
 			if (agentList.length === 0) {
@@ -1392,6 +1557,7 @@ export async function POST(request: Request) {
 						account.appSecret,
 						feishuDomain,
 						testUserId,
+						diagnostic,
 					),
 				);
 			} else if (!feishuBinding && !account) {
@@ -1412,6 +1578,7 @@ export async function POST(request: Request) {
 							feishuConfig.appSecret,
 							feishuDomain,
 							testUserId,
+							diagnostic,
 						),
 					);
 				}
@@ -1428,14 +1595,28 @@ export async function POST(request: Request) {
 						? "allowFrom"
 						: "none";
 				sequentialPlatformTests.push(() =>
-					testDiscord(id, discordConfig.token, discordTestUser, source),
+					testDiscord(
+						id,
+						discordConfig.token,
+						discordTestUser,
+						source,
+						diagnostic,
+					),
 				);
 			}
 
 			// Telegram: only test once, via local OpenClaw channel gateway
 			if (id === "main" && telegramConfig.enabled) {
 				const telegramTestUser = getTelegramDmUser(id);
-				sequentialPlatformTests.push(() => testTelegram(id, telegramTestUser));
+				sequentialPlatformTests.push(() =>
+					testTelegram(
+						id,
+						gatewayPort,
+						gatewayToken,
+						telegramTestUser,
+						diagnostic,
+					),
+				);
 			}
 
 			// WhatsApp: only test once, via gateway
@@ -1449,7 +1630,14 @@ export async function POST(request: Request) {
 						? "allowFrom"
 						: "none";
 				sequentialPlatformTests.push(() =>
-					testWhatsapp(id, gatewayPort, gatewayToken, whatsappTestUser, source),
+					testWhatsapp(
+						id,
+						gatewayPort,
+						gatewayToken,
+						whatsappTestUser,
+						source,
+						diagnostic,
+					),
 				);
 			}
 
@@ -1484,7 +1672,14 @@ export async function POST(request: Request) {
 						? "allowFrom"
 						: "none";
 				sequentialPlatformTests.push(() =>
-					testQqbot(id, qqbotConfig, qqbotAccountId, qqbotTestUser, source),
+					testQqbot(
+						id,
+						qqbotConfig,
+						qqbotAccountId,
+						qqbotTestUser,
+						source,
+						diagnostic,
+					),
 				);
 			}
 
@@ -1529,12 +1724,21 @@ export async function POST(request: Request) {
 							channelConfig,
 							testUserId,
 							source,
+							diagnostic,
 							yuanbaoDmContext?.accountId ?? null,
 						),
 					);
 				} else {
 					sequentialPlatformTests.push(() =>
-						testGenericChannel(id, channelName, testUserId, source),
+						testGenericChannel(
+							id,
+							channelName,
+							gatewayPort,
+							gatewayToken,
+							testUserId,
+							source,
+							diagnostic,
+						),
 					);
 				}
 			}
@@ -1545,12 +1749,19 @@ export async function POST(request: Request) {
 			platformResults.push(await runTest());
 		}
 
-		return NextResponse.json({ results: platformResults });
-	} catch (err: any) {
-		return NextResponse.json({ error: err.message }, { status: 500 });
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json({ results: platformResults, diagnostic }),
+			rateLimit.metadata,
+		);
+	} catch {
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json(
+				{ error: "Platform diagnostics failed" },
+				{ status: 500 },
+			),
+			rateLimit.metadata,
+		);
+	} finally {
+		platformDiagnosticsInFlight.delete(rateLimit.key);
 	}
-}
-
-export async function GET(request: Request) {
-	return POST(request);
 }

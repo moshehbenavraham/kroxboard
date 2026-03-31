@@ -2,9 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { OperatorActionBanner } from "@/app/components/operator-action-banner";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
 import { useI18n } from "@/lib/i18n";
-import { getProtectedRequestError } from "@/lib/operator-elevation-client";
+import {
+	createProtectedRequestBannerState,
+	getProtectedRequestBannerState,
+	getProtectedRequestError,
+	type ProtectedRequestBannerState,
+} from "@/lib/operator-elevation-client";
 
 interface Model {
 	id: string;
@@ -70,19 +76,16 @@ export default function ModelsPage() {
 	const [data, setData] = useState<ConfigData | null>(null);
 	const [modelStats, setModelStats] = useState<Record<string, ModelStat>>({});
 	const [error, setError] = useState<string | null>(null);
-	const [operatorMessage, setOperatorMessage] = useState<string | null>(null);
+	const [operatorBanner, setOperatorBanner] =
+		useState<ProtectedRequestBannerState | null>(null);
 	const [testing, setTesting] = useState<Record<string, boolean>>({});
 	const [testResults, setTestResults] = useState<Record<string, TestResult>>(
 		{},
 	);
 
-	const runModelTest = async (
-		providerId: string,
-		modelId: string,
-	): Promise<TestResult> => {
-		const key = `${providerId}/${modelId}`;
-		const result = await runProtectedRequest<TestResult>({
-			actionId: `test-model:${key}`,
+	const runModelTest = async (providerId: string, modelId: string) =>
+		runProtectedRequest<TestResult>({
+			actionId: `test-model:${providerId}/${modelId}`,
 			request: () =>
 				fetch("/api/test-model", {
 					method: "POST",
@@ -90,39 +93,52 @@ export default function ModelsPage() {
 					body: JSON.stringify({ provider: providerId, modelId }),
 				}),
 		});
-		if (!result.ok) {
-			throw new Error(getProtectedRequestError(result));
-		}
-		return result.data;
-	};
 
 	const testModel = async (providerId: string, modelId: string) => {
 		const key = `${providerId}/${modelId}`;
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				`Running provider probe for ${key}.`,
+			),
+		);
 		setTesting((prev) => ({ ...prev, [key]: true }));
 		setTestResults((prev) => {
 			const n = { ...prev };
 			delete n[key];
 			return n;
 		});
-		try {
-			const result = await runModelTest(providerId, modelId);
-			setOperatorMessage(null);
-			setTestResults((prev) => ({ ...prev, [key]: result }));
-		} catch (err: unknown) {
-			const message =
-				err instanceof Error ? err.message : "Protected model test failed";
-			setOperatorMessage(message);
-			setTestResults((prev) => ({
-				...prev,
-				[key]: { ok: false, error: message, elapsed: 0 },
-			}));
-		} finally {
+		const result = await runModelTest(providerId, modelId);
+		if (result.ok) {
+			setOperatorBanner(null);
+			setTestResults((prev) => ({ ...prev, [key]: result.data }));
 			setTesting((prev) => ({ ...prev, [key]: false }));
+			return;
 		}
+
+		const banner =
+			getProtectedRequestBannerState(result) ??
+			createProtectedRequestBannerState(
+				"error",
+				getProtectedRequestError(result) || "Protected model test failed",
+			);
+		const message = banner.message;
+		setOperatorBanner(banner);
+		setTestResults((prev) => ({
+			...prev,
+			[key]: { ok: false, error: message, elapsed: 0 },
+		}));
+		setTesting((prev) => ({ ...prev, [key]: false }));
 	};
 
 	const testAllModels = async () => {
 		if (!data) return;
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Running provider probes for all configured models.",
+			),
+		);
 		const modelTargets: Array<{
 			providerId: string;
 			modelId: string;
@@ -162,25 +178,35 @@ export default function ModelsPage() {
 			return next;
 		});
 
+		let sawFailure = false;
 		await Promise.all(
 			modelTargets.map(async ({ providerId, modelId, key }) => {
-				try {
-					const result = await runModelTest(providerId, modelId);
-					setOperatorMessage(null);
-					setTestResults((prev) => ({ ...prev, [key]: result }));
-				} catch (err: unknown) {
-					const message =
-						err instanceof Error ? err.message : "Protected model test failed";
-					setOperatorMessage(message);
-					setTestResults((prev) => ({
-						...prev,
-						[key]: { ok: false, error: message, elapsed: 0 },
-					}));
-				} finally {
+				const result = await runModelTest(providerId, modelId);
+				if (result.ok) {
+					setTestResults((prev) => ({ ...prev, [key]: result.data }));
 					setTesting((prev) => ({ ...prev, [key]: false }));
+					return;
 				}
+
+				sawFailure = true;
+				const banner =
+					getProtectedRequestBannerState(result) ??
+					createProtectedRequestBannerState(
+						"error",
+						getProtectedRequestError(result) || "Protected model test failed",
+					);
+				setOperatorBanner(banner);
+				setTestResults((prev) => ({
+					...prev,
+					[key]: { ok: false, error: banner.message, elapsed: 0 },
+				}));
+				setTesting((prev) => ({ ...prev, [key]: false }));
 			}),
 		);
+
+		if (!sawFailure) {
+			setOperatorBanner(null);
+		}
 	};
 
 	// Initial load: restore saved test state from localStorage.
@@ -272,10 +298,12 @@ export default function ModelsPage() {
 					</Link>
 				</div>
 			</div>
-			{operatorMessage && (
-				<div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-					{operatorMessage}
-				</div>
+			{operatorBanner && (
+				<OperatorActionBanner
+					tone={operatorBanner.tone}
+					message={operatorBanner.message}
+					className="mb-6"
+				/>
 			)}
 
 			{/* Primary and fallback models */}

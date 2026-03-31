@@ -3,10 +3,16 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
+import { OperatorActionBanner } from "@/app/components/operator-action-banner";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
-import { buildGatewayUrl } from "@/lib/gateway-url";
+import { buildGatewaySessionLaunchPath } from "@/lib/gateway-launch";
 import { useI18n } from "@/lib/i18n";
-import { getProtectedRequestError } from "@/lib/operator-elevation-client";
+import {
+	createProtectedRequestBannerState,
+	getProtectedRequestBannerState,
+	getProtectedRequestError,
+	type ProtectedRequestBannerState,
+} from "@/lib/operator-elevation-client";
 
 interface AgentInfo {
 	id: string;
@@ -30,12 +36,6 @@ interface Session {
 	totalTokens: number;
 	contextTokens: number;
 	systemSent: boolean;
-}
-
-interface GatewayInfo {
-	port: number;
-	token?: string;
-	host?: string;
 }
 
 const TYPE_EMOJI_COLOR: Record<string, { emoji: string; color: string }> = {
@@ -202,10 +202,13 @@ function AgentPicker() {
 function SessionList({ agentId }: { agentId: string }) {
 	const { runProtectedRequest } = useOperatorElevation();
 	const [sessions, setSessions] = useState<Session[]>([]);
-	const [gateway, setGateway] = useState<GatewayInfo>({ port: 18789 });
 	const [error, setError] = useState<string | null>(null);
-	const [operatorMessage, setOperatorMessage] = useState<string | null>(null);
+	const [operatorBanner, setOperatorBanner] =
+		useState<ProtectedRequestBannerState | null>(null);
 	const [loading, setLoading] = useState(true);
+	const [openingSessionKey, setOpeningSessionKey] = useState<string | null>(
+		null,
+	);
 	const [testResults, setTestResults] = useState<
 		Record<
 			string,
@@ -241,14 +244,11 @@ function SessionList({ agentId }: { agentId: string }) {
 	}
 
 	useEffect(() => {
-		Promise.all([
-			fetch(`/api/sessions/${agentId}`).then((r) => r.json()),
-			fetch("/api/config").then((r) => r.json()),
-		])
-			.then(([sessData, configData]) => {
+		fetch(`/api/sessions/${agentId}`)
+			.then((r) => r.json())
+			.then((sessData) => {
 				if (sessData.error) setError(sessData.error);
 				else setSessions(sessData.sessions || []);
-				if (configData.gateway) setGateway(configData.gateway);
 			})
 			.catch((e) => setError(e.message))
 			.finally(() => setLoading(false));
@@ -296,6 +296,12 @@ function SessionList({ agentId }: { agentId: string }) {
 
 	async function testSession(sessionKey: string, e?: React.MouseEvent) {
 		e?.stopPropagation();
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				`Running a diagnostic for session ${sessionKey}.`,
+			),
+		);
 		setTestResults((prev) => ({
 			...prev,
 			[sessionKey]: { status: "testing" },
@@ -315,22 +321,30 @@ function SessionList({ agentId }: { agentId: string }) {
 						body: JSON.stringify({
 							sessionKey,
 							agentId,
-							port: gateway.port,
-							token: gateway.token,
 						}),
 					}),
 			});
-			if (!result.ok) {
-				throw new Error(getProtectedRequestError(result));
+			if (result.ok) {
+				setOperatorBanner(null);
+				const data = result.data;
+				setTestResults((prev) => ({ ...prev, [sessionKey]: data }));
+				return data;
 			}
-			setOperatorMessage(null);
-			const data = result.data;
-			setTestResults((prev) => ({ ...prev, [sessionKey]: data }));
-			return data;
+
+			const banner =
+				getProtectedRequestBannerState(result) ??
+				createProtectedRequestBannerState(
+					"error",
+					getProtectedRequestError(result) || "Protected session test failed",
+				);
+			setOperatorBanner(banner);
+			const failedResult = { status: "error", error: banner.message };
+			setTestResults((prev) => ({ ...prev, [sessionKey]: failedResult }));
+			return failedResult;
 		} catch (err: unknown) {
 			const message =
 				err instanceof Error ? err.message : "Protected session test failed";
-			setOperatorMessage(message);
+			setOperatorBanner(createProtectedRequestBannerState("error", message));
 			const failedResult = { status: "error", error: message };
 			setTestResults((prev) => ({ ...prev, [sessionKey]: failedResult }));
 			return failedResult;
@@ -338,10 +352,42 @@ function SessionList({ agentId }: { agentId: string }) {
 	}
 
 	async function testAllSessions() {
+		setOperatorBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Running diagnostics for all sessions.",
+			),
+		);
 		setTestingAll(true);
 		const promises = sessions.map((s) => testSession(s.key));
 		await Promise.all(promises);
 		setTestingAll(false);
+	}
+
+	function openSessionChat(sessionKey: string): void {
+		setOpeningSessionKey(sessionKey);
+		setOperatorBanner(null);
+		const launchPath = buildGatewaySessionLaunchPath(sessionKey);
+		if (!launchPath) {
+			setOperatorBanner(
+				createProtectedRequestBannerState(
+					"invalid",
+					"Chat launch unavailable for this session",
+				),
+			);
+			setOpeningSessionKey(null);
+			return;
+		}
+		const opened = window.open(launchPath, "_blank", "noopener,noreferrer");
+		if (!opened) {
+			setOperatorBanner(
+				createProtectedRequestBannerState(
+					"error",
+					"Unable to open the chat window",
+				),
+			);
+		}
+		setOpeningSessionKey(null);
 	}
 
 	return (
@@ -372,32 +418,21 @@ function SessionList({ agentId }: { agentId: string }) {
 					</Link>
 				</div>
 			</div>
-			{operatorMessage && (
-				<div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-					{operatorMessage}
-				</div>
+			{operatorBanner && (
+				<OperatorActionBanner
+					tone={operatorBanner.tone}
+					message={operatorBanner.message}
+					className="mb-4"
+				/>
 			)}
 
 			<div className="space-y-3">
 				{sessions.map((s) => {
 					const typeInfo = getTypeLabel(s.type);
-					let chatUrl = buildGatewayUrl(
-						gateway.port,
-						"/chat",
-						{ session: s.key },
-						gateway.host,
-					);
-					if (gateway.token)
-						chatUrl = buildGatewayUrl(
-							gateway.port,
-							"/chat",
-							{ session: s.key, token: gateway.token },
-							gateway.host,
-						);
 					return (
 						<div
 							key={s.key}
-							onClick={() => window.open(chatUrl, "_blank")}
+							onClick={() => openSessionChat(s.key)}
 							title={t("agent.openChat")}
 							className="p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] hover:border-[var(--accent)] transition cursor-pointer"
 						>
@@ -415,6 +450,11 @@ function SessionList({ agentId }: { agentId: string }) {
 									)}
 								</div>
 								<div className="flex items-center gap-2 md:self-auto self-start">
+									{openingSessionKey === s.key && (
+										<span className="text-xs text-[var(--text-muted)]">
+											Opening...
+										</span>
+									)}
 									<button
 										onClick={(e) => testSession(s.key, e)}
 										disabled={testResults[s.key]?.status === "testing"}

@@ -1,8 +1,23 @@
 import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
-import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
+import { probeModel } from "@/lib/model-probe";
+import {
+	OPENCLAW_CONFIG_PATH,
+	OPENCLAW_HOME,
+	resolveOpenclawAgentSessionsFile,
+	resolveOpenclawCronStorePath,
+} from "@/lib/openclaw-paths";
+import {
+	applyDiagnosticRateLimitHeaders,
+	enforceDiagnosticRateLimit,
+} from "@/lib/security/diagnostic-rate-limit";
+import { resolveOutboundDiagnosticAccess } from "@/lib/security/feature-flags";
+import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
+import type {
+	DiagnosticMetadata,
+	DiagnosticRateLimitMetadata,
+} from "@/lib/security/types";
 
 const ALERTS_CONFIG_PATH = path.join(OPENCLAW_HOME, "alerts.json");
 const CRON_RULE_ID = "cron_continuous_failure";
@@ -24,11 +39,44 @@ interface AlertConfig {
 	lastAlerts?: Record<string, number>;
 }
 
+interface AlertNotificationResult {
+	agentId: string;
+	mode: DiagnosticMetadata["mode"];
+	status: "dry_run" | "sent" | "failed";
+	message: string;
+	error?: string;
+}
+
+interface AlertCheckOutcome {
+	results: string[];
+	notifications: AlertNotificationResult[];
+}
+
+interface CronStoreJob {
+	id: string;
+	name?: string;
+	state?: {
+		consecutiveErrors?: number;
+		lastStatus?: string;
+		lastRunAtMs?: number;
+		nextRunAtMs?: number;
+		lastError?: string;
+	};
+}
+
 function getAlertConfig(): AlertConfig {
 	try {
 		if (fs.existsSync(ALERTS_CONFIG_PATH)) {
 			const raw = fs.readFileSync(ALERTS_CONFIG_PATH, "utf-8");
-			return JSON.parse(raw);
+			const parsed = JSON.parse(raw);
+			if (Array.isArray(parsed?.rules)) {
+				for (const rule of parsed.rules) {
+					if (rule?.id === LEGACY_CRON_RULE_ID) {
+						rule.id = CRON_RULE_ID;
+					}
+				}
+			}
+			return parsed;
 		}
 	} catch {}
 	return {
@@ -68,6 +116,29 @@ function getOpenclawConfig() {
 	} catch {
 		return {};
 	}
+}
+
+function loadCronJobs(openclawConfig: any): CronStoreJob[] {
+	const rawStorePath =
+		typeof openclawConfig?.cron?.store === "string"
+			? openclawConfig.cron.store
+			: "";
+	const storePath = resolveOpenclawCronStorePath(rawStorePath);
+	if (!storePath || !fs.existsSync(storePath)) return [];
+
+	try {
+		const raw = fs.readFileSync(storePath, "utf-8");
+		const parsed = JSON.parse(raw);
+		return Array.isArray(parsed?.jobs) ? parsed.jobs.filter(Boolean) : [];
+	} catch {
+		return [];
+	}
+}
+
+function normalizeCronLabel(job: CronStoreJob): string {
+	if (typeof job.name === "string" && job.name.trim()) return job.name.trim();
+	if (typeof job.id === "string" && job.id.trim()) return job.id.trim();
+	return "unknown";
 }
 
 function saveAlertConfig(config: AlertConfig): void {
@@ -144,11 +215,10 @@ function getFeishuAccountForAgent(
 
 // Find the most recent Feishu DM user for the agent.
 function getFeishuDmUser(agentId: string): string | null {
+	const sessionsPath = resolveOpenclawAgentSessionsFile(agentId);
+	if (!sessionsPath || !fs.existsSync(sessionsPath)) return null;
+
 	try {
-		const sessionsPath = path.join(
-			OPENCLAW_HOME,
-			`agents/${agentId}/sessions/sessions.json`,
-		);
 		const raw = fs.readFileSync(sessionsPath, "utf-8");
 		const sessions = JSON.parse(raw);
 		let bestId: string | null = null;
@@ -170,7 +240,11 @@ function getFeishuDmUser(agentId: string): string | null {
 }
 
 // Send alert notifications through the Feishu API.
-async function sendAlertViaFeishu(agentId: string, message: string) {
+async function sendAlertViaFeishu(
+	agentId: string,
+	message: string,
+	diagnostic: DiagnosticMetadata,
+): Promise<AlertNotificationResult> {
 	console.log(
 		`[ALERT] sendAlertViaFeishu called with agentId: ${agentId}, message: ${message}`,
 	);
@@ -186,7 +260,13 @@ async function sendAlertViaFeishu(agentId: string, message: string) {
 	const accountInfo = getFeishuAccountForAgent(agentId, feishuConfig, bindings);
 	if (!accountInfo) {
 		console.log(`[ALERT] No Feishu account found for agent ${agentId}`);
-		return { sent: false, error: `No account for agent ${agentId}` };
+		return {
+			agentId,
+			mode: diagnostic.mode,
+			status: "failed",
+			message,
+			error: `No account for agent ${agentId}`,
+		};
 	}
 
 	console.log(
@@ -198,7 +278,13 @@ async function sendAlertViaFeishu(agentId: string, message: string) {
 	console.log(`[ALERT] Feishu DM user found: ${testUserId}`);
 	if (!testUserId) {
 		console.log(`[ALERT] No Feishu DM user found for agent ${agentId}`);
-		return { sent: false, error: "No DM user" };
+		return {
+			agentId,
+			mode: diagnostic.mode,
+			status: "failed",
+			message,
+			error: "No DM user",
+		};
 	}
 
 	const baseUrl =
@@ -224,10 +310,25 @@ async function sendAlertViaFeishu(agentId: string, message: string) {
 
 		const tokenData = await tokenResp.json();
 		if (tokenData.code !== 0 || !tokenData.tenant_access_token) {
-			return { sent: false, error: `Token failed: ${tokenData.msg}` };
+			return {
+				agentId,
+				mode: diagnostic.mode,
+				status: "failed",
+				message,
+				error: `Token failed: ${tokenData.msg}`,
+			};
 		}
 
 		const token = tokenData.tenant_access_token;
+
+		if (diagnostic.mode === "dry_run") {
+			return {
+				agentId,
+				mode: diagnostic.mode,
+				status: "dry_run",
+				message,
+			};
+		}
 
 		// Send the DM. Try user_id first, then fall back to open_id.
 		const now = new Date().toLocaleTimeString("en-US", {
@@ -278,75 +379,63 @@ async function sendAlertViaFeishu(agentId: string, message: string) {
 			const msgData2 = await msgResp2.json();
 			if (msgData2.code === 0) {
 				console.log(`[ALERT] Sent to ${agentId}: ${message}`);
-				return { sent: true, message };
+				return {
+					agentId,
+					mode: diagnostic.mode,
+					status: "sent",
+					message,
+				};
 			} else {
-				return { sent: false, error: `Send failed: ${msgData2.msg}` };
+				return {
+					agentId,
+					mode: diagnostic.mode,
+					status: "failed",
+					message,
+					error: `Send failed: ${msgData2.msg}`,
+				};
 			}
 		}
 
 		if (msgData.code === 0) {
 			console.log(`[ALERT] Sent to ${agentId}: ${message}`);
-			return { sent: true, message };
+			return {
+				agentId,
+				mode: diagnostic.mode,
+				status: "sent",
+				message,
+			};
 		} else {
 			console.log(`[ALERT] Send failed (user_id):`, msgData);
-			return { sent: false, error: msgData.msg };
+			return {
+				agentId,
+				mode: diagnostic.mode,
+				status: "failed",
+				message,
+				error: msgData.msg,
+			};
 		}
 	} catch (err: unknown) {
-		const message = err instanceof Error ? err.message : String(err);
+		const alertError = err instanceof Error ? err.message : String(err);
 		console.log(`[ALERT] Error sending message:`, err);
-		return { sent: false, error: message };
-	}
-}
-
-// Send alert notifications through the OpenClaw Gateway API.
-async function _sendAlert(agentId: string, message: string) {
-	const openclawConfig = getOpenclawConfig();
-	const gatewayPort = openclawConfig.gateway?.port || 18789;
-	const gatewayToken = openclawConfig.gateway?.auth?.token || "";
-
-	// Use the main session key for the target agent.
-	const sessionKey = `agent:${agentId}:main`;
-
-	try {
-		// Fire and forget; do not wait for the response.
-		fetch(`http://127.0.0.1:${gatewayPort}/v1/chat/completions`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				Authorization: `Bearer ${gatewayToken}`,
-				"x-openclaw-agent-id": agentId,
-			},
-			body: JSON.stringify({
-				session: sessionKey,
-				messages: [
-					{ role: "user", content: `[Bell] Alert Notification: ${message}` },
-				],
-				max_tokens: 64,
-			}),
-		})
-			.then((resp) => {
-				if (resp.ok) {
-					console.log(`[ALERT] Sent to ${agentId}: ${message}`);
-				}
-			})
-			.catch((err) => {
-				console.error(`[ALERT] Error: ${err.message}`);
-			});
-
-		return { sent: true, message };
-	} catch (err: unknown) {
 		return {
-			sent: false,
-			error: err instanceof Error ? err.message : String(err),
+			agentId,
+			mode: diagnostic.mode,
+			status: "failed",
+			message,
+			error: alertError,
 		};
 	}
 }
 
 // Check whether models are available.
-async function checkModelAlerts(config: AlertConfig) {
+async function checkModelAlerts(
+	config: AlertConfig,
+	diagnostic: DiagnosticMetadata,
+): Promise<AlertCheckOutcome> {
 	const results: string[] = [];
+	const notifications: AlertNotificationResult[] = [];
 	const rule = config.rules.find((r) => r.id === "model_unavailable");
-	if (!rule?.enabled) return results;
+	if (!rule?.enabled) return { results, notifications };
 
 	// Load all configured models.
 	const openclawConfig = getOpenclawConfig();
@@ -366,15 +455,11 @@ async function checkModelAlerts(config: AlertConfig) {
 	// Test each model.
 	for (const { provider, id } of allModels) {
 		try {
-			const _testStart = Date.now();
-			const testResp = await fetch("http://localhost:3000/api/test-model", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ provider, modelId: id }),
-				signal: AbortSignal.timeout(10000),
+			const testResult = await probeModel({
+				providerId: provider,
+				modelId: id,
+				timeoutMs: 10000,
 			});
-
-			const testResult = await testResp.json();
 
 			if (!testResult.ok) {
 				results.push(`[Alert] Model ${provider}/${id} is unavailable.`);
@@ -383,12 +468,16 @@ async function checkModelAlerts(config: AlertConfig) {
 					config.lastAlerts?.[`${rule.id}_${provider}_${id}`] || 0;
 				const now = Date.now();
 				if (now - lastAlert > 60000) {
-					await sendAlertViaFeishu(
+					const notification = await sendAlertViaFeishu(
 						config.receiveAgent,
 						`Model ${provider}/${id} is unavailable. Please check the configuration.`,
+						diagnostic,
 					);
-					config.lastAlerts = config.lastAlerts || {};
-					config.lastAlerts[`${rule.id}_${provider}_${id}`] = now;
+					notifications.push(notification);
+					if (notification.status === "sent") {
+						config.lastAlerts = config.lastAlerts || {};
+						config.lastAlerts[`${rule.id}_${provider}_${id}`] = now;
+					}
 				}
 			}
 		} catch (err: unknown) {
@@ -399,14 +488,18 @@ async function checkModelAlerts(config: AlertConfig) {
 		}
 	}
 
-	return results;
+	return { results, notifications };
 }
 
 // Check for bots that have stopped responding.
-async function checkBotResponseAlerts(config: AlertConfig) {
+async function checkBotResponseAlerts(
+	config: AlertConfig,
+	diagnostic: DiagnosticMetadata,
+): Promise<AlertCheckOutcome> {
 	const results: string[] = [];
+	const notifications: AlertNotificationResult[] = [];
 	const rule = config.rules.find((r) => r.id === "bot_no_response");
-	if (!rule?.enabled) return results;
+	if (!rule?.enabled) return { results, notifications };
 
 	const agentsDir = path.join(OPENCLAW_HOME, "agents");
 	let agentIds: string[] = [];
@@ -415,7 +508,7 @@ async function checkBotResponseAlerts(config: AlertConfig) {
 			.readdirSync(agentsDir)
 			.filter((f) => fs.statSync(path.join(agentsDir, f)).isDirectory());
 	} catch {
-		return results;
+		return { results, notifications };
 	}
 
 	// If targetAgents is configured, only monitor those agents.
@@ -461,62 +554,82 @@ async function checkBotResponseAlerts(config: AlertConfig) {
 
 			const lastAlert = config.lastAlerts?.[`${rule.id}_${agentId}`] || 0;
 			if (now - lastAlert > 60000) {
-				await sendAlertViaFeishu(
+				const notification = await sendAlertViaFeishu(
 					config.receiveAgent,
 					`Agent ${agentId} has not responded for ${mins} minutes.`,
+					diagnostic,
 				);
-				config.lastAlerts = config.lastAlerts || {};
-				config.lastAlerts[`${rule.id}_${agentId}`] = now;
+				notifications.push(notification);
+				if (notification.status === "sent") {
+					config.lastAlerts = config.lastAlerts || {};
+					config.lastAlerts[`${rule.id}_${agentId}`] = now;
+				}
 			}
 		}
 	}
 
-	return results;
+	return { results, notifications };
 }
 
 // Check for repeated cron failures.
-async function checkCronAlerts(config: AlertConfig) {
+async function checkCronAlerts(
+	config: AlertConfig,
+	diagnostic: DiagnosticMetadata,
+	openclawConfig: any,
+): Promise<AlertCheckOutcome> {
 	const results: string[] = [];
+	const notifications: AlertNotificationResult[] = [];
 	const rule = config.rules.find(
 		(r) => r.id === CRON_RULE_ID || r.id === LEGACY_CRON_RULE_ID,
 	);
-	if (!rule?.enabled) return results;
+	if (!rule?.enabled) return { results, notifications };
+	const threshold = rule.threshold || 3;
+	const cronJobs = loadCronJobs(openclawConfig);
+	const failingJobs = cronJobs.filter((job) => {
+		const consecutiveErrors = job.state?.consecutiveErrors ?? 0;
+		return consecutiveErrors >= threshold;
+	});
 
-	// Check cron status. This remains a simplified placeholder.
-	const agentsDir = path.join(OPENCLAW_HOME, "agents");
-	let _agentIds: string[] = [];
-	try {
-		_agentIds = fs
-			.readdirSync(agentsDir)
-			.filter((f) => fs.statSync(path.join(agentsDir, f)).isDirectory());
-	} catch {
-		return results;
-	}
+	for (const job of failingJobs) {
+		const consecutiveErrors = job.state?.consecutiveErrors ?? 0;
+		const label = normalizeCronLabel(job);
+		const suffix =
+			typeof job.state?.lastError === "string" && job.state.lastError.trim()
+				? ` Last error: ${job.state.lastError.trim().slice(0, 120)}.`
+				: "";
+		results.push(
+			`[Alert] Cron job ${label} failed ${consecutiveErrors} times in a row.${suffix}`,
+		);
 
-	// Simulate repeated failures until real cron-failure accounting exists.
-	const mockCronFailures = Math.floor(Math.random() * 5); // Simulates 0-4 failures.
-
-	if (mockCronFailures >= (rule.threshold || 3)) {
-		results.push(`[Alert] Cron failed ${mockCronFailures} times in a row.`);
-		const lastAlert = config.lastAlerts?.[rule.id] || 0;
+		const dedupeKey = `${rule.id}_${job.id}`;
+		const lastAlert = config.lastAlerts?.[dedupeKey] || 0;
 		const now = Date.now();
-		if (now - lastAlert > 300000) {
-			// Do not repeat within 5 minutes.
-			await sendAlertViaFeishu(
-				config.receiveAgent,
-				`Cron failed ${mockCronFailures} times in a row. Please check the cron configuration.`,
-			);
+		if (now - lastAlert <= 300000) continue;
+
+		const notification = await sendAlertViaFeishu(
+			config.receiveAgent,
+			`Cron job ${label} failed ${consecutiveErrors} times in a row. Please check the cron configuration.`,
+			diagnostic,
+		);
+		notifications.push(notification);
+		if (notification.status === "sent") {
 			config.lastAlerts = config.lastAlerts || {};
-			config.lastAlerts[rule.id] = now;
+			config.lastAlerts[dedupeKey] = now;
 		}
 	}
 
-	return results;
+	return { results, notifications };
 }
 
 export async function POST(request: Request) {
-	const access = requireSensitiveRouteAccess(request);
+	const access = requireSensitiveMutationAccess(request, {
+		allowedMethods: ["POST"],
+	});
 	if (!access.ok) return access.response;
+	const diagnosticAccess = resolveOutboundDiagnosticAccess();
+	if (!diagnosticAccess.ok) return diagnosticAccess.response;
+	const { diagnostic } = diagnosticAccess;
+	let rateLimitMetadata: DiagnosticRateLimitMetadata | null = null;
 
 	try {
 		const config = getAlertConfig();
@@ -526,37 +639,62 @@ export async function POST(request: Request) {
 				success: false,
 				message: "Alerts are disabled",
 				results: [],
+				notifications: [],
+				diagnostic,
 			});
 		}
+		const rateLimit = enforceDiagnosticRateLimit(request, "alert_diagnostics");
+		if (!rateLimit.ok) return rateLimit.response;
+		rateLimitMetadata = rateLimit.metadata;
+		const openclawConfig = getOpenclawConfig();
 
 		const allResults: string[] = [];
+		const notifications: AlertNotificationResult[] = [];
 
 		// Run each alert check.
-		const modelResults = await checkModelAlerts(config);
-		allResults.push(...modelResults);
+		const modelResults = await checkModelAlerts(config, diagnostic);
+		allResults.push(...modelResults.results);
+		notifications.push(...modelResults.notifications);
 
-		const botResults = await checkBotResponseAlerts(config);
-		allResults.push(...botResults);
+		const botResults = await checkBotResponseAlerts(config, diagnostic);
+		allResults.push(...botResults.results);
+		notifications.push(...botResults.notifications);
 
-		const cronResults = await checkCronAlerts(config);
-		allResults.push(...cronResults);
+		const cronResults = await checkCronAlerts(
+			config,
+			diagnostic,
+			openclawConfig,
+		);
+		allResults.push(...cronResults.results);
+		notifications.push(...cronResults.notifications);
 
 		// Persist updated last-alert timestamps.
-		saveAlertConfig(config);
+		if (diagnostic.mode === "live_send") {
+			saveAlertConfig(config);
+		}
 
-		return NextResponse.json({
-			success: true,
-			message: `Found ${allResults.length} alerts`,
-			results: allResults,
-			config: {
-				enabled: config.enabled,
-				receiveAgent: config.receiveAgent,
-			},
-		});
-	} catch (err: unknown) {
-		return NextResponse.json(
-			{ error: err instanceof Error ? err.message : String(err) },
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json({
+				success: true,
+				message: `Found ${allResults.length} alerts`,
+				results: allResults,
+				notifications,
+				diagnostic,
+				config: {
+					enabled: config.enabled,
+					receiveAgent: config.receiveAgent,
+				},
+			}),
+			rateLimit.metadata,
+		);
+	} catch (error) {
+		console.error("[alerts/check] failed", error);
+		const response = NextResponse.json(
+			{ error: "Alert diagnostics failed" },
 			{ status: 500 },
 		);
+		return rateLimitMetadata
+			? applyDiagnosticRateLimitHeaders(response, rateLimitMetadata)
+			: response;
 	}
 }

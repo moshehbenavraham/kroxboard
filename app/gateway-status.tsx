@@ -3,23 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 
-function resolveGatewayUrl(url?: string): string | undefined {
-	if (!url || typeof window === "undefined") return url;
-	try {
-		const parsed = new URL(url);
-		if (parsed.hostname === "localhost")
-			parsed.hostname = window.location.hostname;
-		return parsed.toString();
-	} catch {
-		return url;
-	}
-}
-
 interface HealthResult {
 	ok: boolean;
 	error?: string;
 	data?: any;
-	webUrl?: string;
+	launchPath?: string;
 	openclawVersion?: string;
 }
 
@@ -60,39 +48,58 @@ export function GatewayStatus({
 		<div
 			className={`relative inline-flex items-center gap-1.5 ${className}`.trim()}
 		>
-			<a
-				href={
-					health?.ok && health.webUrl
-						? resolveGatewayUrl(health.webUrl)
-						: undefined
-				}
-				target="_blank"
-				rel="noopener noreferrer"
-				title={gatewayTitle}
-				onMouseEnter={() => setShowVersionTip(true)}
-				onMouseLeave={() => setShowVersionTip(false)}
-				onFocus={() => setShowVersionTip(true)}
-				onBlur={() => setShowVersionTip(false)}
-				className={`inline-flex items-center rounded-full font-medium border hover:bg-cyan-500/30 transition-colors cursor-pointer ${
-					compact ? "px-2 py-1 text-[10px]" : "px-2 py-0.5 text-xs"
-				} ${
-					health?.ok
-						? "bg-cyan-500/25 text-cyan-200 border-cyan-400/45 animate-pulse"
-						: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30"
-				}`}
-			>
-				{compact ? (
-					"GW"
-				) : hideIconOnMobile ? (
-					<>
-						<span className="md:hidden">Gateway</span>
-						<span className="hidden md:inline">🦞 Gateway</span>
-					</>
-				) : (
-					"🦞 Gateway"
-				)}
-				<span className="opacity-50 text-[10px]">↗</span>
-			</a>
+			{health?.ok && health.launchPath ? (
+				<a
+					href={health.launchPath}
+					target="_blank"
+					rel="noopener noreferrer"
+					title={gatewayTitle}
+					onMouseEnter={() => setShowVersionTip(true)}
+					onMouseLeave={() => setShowVersionTip(false)}
+					onFocus={() => setShowVersionTip(true)}
+					onBlur={() => setShowVersionTip(false)}
+					className={`inline-flex items-center rounded-full font-medium border hover:bg-cyan-500/30 transition-colors cursor-pointer ${
+						compact ? "px-2 py-1 text-[10px]" : "px-2 py-0.5 text-xs"
+					} ${
+						health.ok
+							? "bg-cyan-500/25 text-cyan-200 border-cyan-400/45 animate-pulse"
+							: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30"
+					}`}
+				>
+					{compact ? (
+						"GW"
+					) : hideIconOnMobile ? (
+						<>
+							<span className="md:hidden">Gateway</span>
+							<span className="hidden md:inline">Gateway</span>
+						</>
+					) : (
+						"Gateway"
+					)}
+					<span className="opacity-50 text-[10px]">-&gt;</span>
+				</a>
+			) : (
+				<span
+					title={gatewayTitle}
+					onMouseEnter={() => setShowVersionTip(true)}
+					onMouseLeave={() => setShowVersionTip(false)}
+					className={`inline-flex items-center rounded-full font-medium border ${
+						compact ? "px-2 py-1 text-[10px]" : "px-2 py-0.5 text-xs"
+					} bg-cyan-500/10 text-cyan-300/70 border-cyan-500/20`}
+				>
+					{compact ? (
+						"GW"
+					) : hideIconOnMobile ? (
+						<>
+							<span className="md:hidden">Gateway</span>
+							<span className="hidden md:inline">Gateway</span>
+						</>
+					) : (
+						"Gateway"
+					)}
+					<span className="opacity-60 text-[10px]">n/a</span>
+				</span>
+			)}
 			{showVersionTip && (
 				<div className="absolute top-full left-0 mt-1 z-50 px-2 py-1 rounded-md bg-black/80 border border-white/10 text-white text-[10px] whitespace-nowrap shadow-lg pointer-events-none">
 					{gatewayTitle}
@@ -115,9 +122,13 @@ export function GatewayStatus({
 							? "text-green-400 text-xs cursor-help"
 							: "text-green-400 text-sm cursor-help"
 					}
-					title={t("gateway.healthy")}
+					title={
+						health.launchPath
+							? t("gateway.healthy")
+							: "Gateway launch unavailable"
+					}
 				>
-					✅
+					OK
 				</span>
 			) : (
 				<span
@@ -129,7 +140,7 @@ export function GatewayStatus({
 					title={health.error || t("gateway.unhealthy")}
 					onClick={() => setShowError((v) => !v)}
 				>
-					❌
+					ERR
 				</span>
 			)}
 			{showError && health && !health.ok && health.error && (

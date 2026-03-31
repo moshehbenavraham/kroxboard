@@ -1,18 +1,36 @@
 import fs from "node:fs";
-import path from "node:path";
 import { NextResponse } from "next/server";
-import { OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import { resolveOpenclawAgentSessionsFile } from "@/lib/openclaw-paths";
+import {
+	createInvalidRequestBoundaryResponse,
+	validateAgentId,
+} from "@/lib/security/request-boundary";
 
 export async function GET(
 	_req: Request,
 	{ params }: { params: Promise<{ agentId: string }> },
 ) {
 	try {
-		const { agentId } = await params;
-		const sessionsPath = path.join(
-			OPENCLAW_HOME,
-			`agents/${agentId}/sessions/sessions.json`,
-		);
+		const { agentId: rawAgentId } = await params;
+		const agentId = validateAgentId(rawAgentId);
+		if (!agentId.ok) {
+			return createInvalidRequestBoundaryResponse(agentId.error);
+		}
+
+		const sessionsPath = resolveOpenclawAgentSessionsFile(agentId.value);
+		if (!sessionsPath) {
+			return createInvalidRequestBoundaryResponse({
+				ok: false,
+				type: "invalid_request_boundary",
+				field: "agentId",
+				reason: "invalid_format",
+				message: "Invalid agentId",
+			});
+		}
+		if (!fs.existsSync(sessionsPath)) {
+			return NextResponse.json({ agentId: agentId.value, sessions: [] });
+		}
+
 		const raw = fs.readFileSync(sessionsPath, "utf-8");
 		const sessions = JSON.parse(raw);
 
@@ -66,10 +84,10 @@ export async function GET(
 		// Sort by most recent activity.
 		list.sort((a, b) => b.updatedAt - a.updatedAt);
 
-		return NextResponse.json({ agentId, sessions: list });
-	} catch (err: unknown) {
+		return NextResponse.json({ agentId: agentId.value, sessions: list });
+	} catch {
 		return NextResponse.json(
-			{ error: err instanceof Error ? err.message : String(err) },
+			{ error: "Unable to load sessions" },
 			{ status: 500 },
 		);
 	}

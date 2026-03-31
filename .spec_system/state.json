@@ -2,7 +2,7 @@
 	"version": "2.0",
 	"project_name": "OpenClaw Dashboard",
 	"description": "A lightweight web dashboard for viewing OpenClaw bots, agents, models, and sessions status at a glance.",
-	"current_phase": 1,
+	"current_phase": 2,
 	"current_session": null,
 	"monorepo": false,
 	"phases": {
@@ -15,13 +15,13 @@
 		"1": {
 			"name": "Sensitive Route Hardening",
 			"description": "Close the remaining auth, route-boundary, and abuse-prone gaps on sensitive flows.",
-			"status": "in_progress",
+			"status": "complete",
 			"session_count": 3
 		},
 		"2": {
 			"name": "Runtime Boundary and Read Path Hardening",
 			"description": "Validate inputs, bound filesystem and runtime access, and keep heavy read paths safe under load.",
-			"status": "not_started",
+			"status": "in_progress",
 			"session_count": 3
 		},
 		"3": {
@@ -35,7 +35,9 @@
 		"phase00-session01-auth-and-operator-elevation-foundation",
 		"phase00-session02-secret-containment-and-token-free-operator-flows",
 		"phase00-session03-safe-defaults-and-deployment-baseline",
-		"phase01-session01-route-boundary-validation"
+		"phase01-session01-route-boundary-validation",
+		"phase01-session02-sensitive-route-enforcement-and-operator-failure-states",
+		"phase01-session03-abuse-resistance-and-deterministic-diagnostics"
 	],
 	"next_session_history": [
 		{
@@ -62,6 +64,31 @@
 			"date": "2026-03-31",
 			"session": "phase01-session01-route-boundary-validation",
 			"status": "validated"
+		},
+		{
+			"date": "2026-03-31",
+			"session": "phase01-session02-sensitive-route-enforcement-and-operator-failure-states",
+			"status": "planned"
+		},
+		{
+			"date": "2026-03-31",
+			"session": "phase01-session02-sensitive-route-enforcement-and-operator-failure-states",
+			"status": "completed"
+		},
+		{
+			"date": "2026-03-31",
+			"session": "phase01-session03-abuse-resistance-and-deterministic-diagnostics",
+			"status": "planned"
+		},
+		{
+			"date": "2026-03-31",
+			"session": "phase01-session03-abuse-resistance-and-deterministic-diagnostics",
+			"status": "completed"
+		},
+		{
+			"date": "2026-03-31",
+			"session": "phase02-session01-payload-validation-and-write-path-safety",
+			"status": "completed"
 		}
 	]
 }

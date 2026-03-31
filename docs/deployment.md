@@ -46,6 +46,10 @@ docker run -d --name openclaw-dashboard \
   openclaw-dashboard
 ```
 
+The image itself also defaults to `HOSTNAME=127.0.0.1`, so the container and
+the published port both stay loopback-only unless you deliberately override the
+runtime settings.
+
 ### Verify
 
 ```bash
@@ -77,6 +81,8 @@ Operator --> Cloudflare Access (OTP login) --> Cloudflare Tunnel --> 127.0.0.1:3
    - Policy: allow `moshehwebservices@live.com` via One-Time PIN
    - Session duration: 24 hours
 4. **Configure `.env`** with production values (see [Environments](environments.md))
+   - Keep `ENABLE_OUTBOUND_TESTS=false` and `ENABLE_LIVE_SEND_DIAGNOSTICS=false`
+     unless you are actively running protected diagnostics.
 
 ### Rollback
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
 import { parseProtectedResponse } from "@/lib/operator-elevation-client";
 
-// Background alert checker that starts automatically with the app.
+// Background alert checker that schedules future checks without running one on mount.
 export function AlertMonitor() {
 	const { sessionState } = useOperatorElevation();
 	const [_enabled, setEnabled] = useState(false);
@@ -20,17 +20,23 @@ export function AlertMonitor() {
 
 		let cancelled = false;
 		let timer: ReturnType<typeof setInterval> | null = null;
+		let checkInFlight = false;
+		const controller = new AbortController();
 
-		// Load config and start checking.
-		fetch("/api/alerts")
+		// Load config and schedule checks only after mount.
+		fetch("/api/alerts", { signal: controller.signal })
 			.then((r) => r.json())
 			.then((config) => {
 				if (cancelled) return;
 				if (config.enabled) {
 					setEnabled(true);
-					// Alert check function.
 					const checkAlerts = () => {
-						fetch("/api/alerts/check", { method: "POST" })
+						if (cancelled || checkInFlight) return;
+						checkInFlight = true;
+						fetch("/api/alerts/check", {
+							method: "POST",
+							signal: controller.signal,
+						})
 							.then((response) =>
 								parseProtectedResponse<{ results?: string[] }>(response),
 							)
@@ -44,11 +50,16 @@ export function AlertMonitor() {
 									);
 								}
 							})
-							.catch(console.error);
+							.catch((error: unknown) => {
+								if (error instanceof Error && error.name === "AbortError") {
+									return;
+								}
+								console.error(error);
+							})
+							.finally(() => {
+								checkInFlight = false;
+							});
 					};
-
-					// Run one immediate check.
-					checkAlerts();
 
 					// Start the interval timer.
 					timer = setInterval(
@@ -63,6 +74,7 @@ export function AlertMonitor() {
 
 		return () => {
 			cancelled = true;
+			controller.abort();
 			if (timer) clearInterval(timer);
 		};
 	}, [hasElevatedSession]);

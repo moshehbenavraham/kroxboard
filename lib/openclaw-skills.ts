@@ -12,13 +12,16 @@ export interface SkillInfo {
 	description: string;
 	emoji: string;
 	source: string;
-	location: string;
 	usedBy: string[];
 }
 
 export interface SkillAgentInfo {
 	name: string;
 	emoji: string;
+}
+
+interface ResolvedSkillInfo extends SkillInfo {
+	location: string;
 }
 
 function findOpenClawPkg(): string {
@@ -55,7 +58,7 @@ function readSkillFile(
 	skillMd: string,
 	source: string,
 	id = path.basename(path.dirname(skillMd)),
-): SkillInfo | null {
+): ResolvedSkillInfo | null {
 	if (!fs.existsSync(skillMd)) return null;
 	const content = fs.readFileSync(skillMd, "utf-8");
 	const fm = parseFrontmatter(content);
@@ -63,15 +66,15 @@ function readSkillFile(
 		id,
 		name: fm.name || id,
 		description: fm.description || "",
-		emoji: fm.emoji || "🔧",
+		emoji: fm.emoji || "[tool]",
 		source,
 		location: skillMd,
 		usedBy: [],
 	};
 }
 
-function scanSkillsDir(dir: string, source: string): SkillInfo[] {
-	const skills: SkillInfo[] = [];
+function scanSkillsDir(dir: string, source: string): ResolvedSkillInfo[] {
+	const skills: ResolvedSkillInfo[] = [];
 	if (!fs.existsSync(dir)) return skills;
 	for (const name of fs.readdirSync(dir).sort()) {
 		const skill = readSkillFile(path.join(dir, name, "SKILL.md"), source, name);
@@ -141,8 +144,8 @@ function getAgentSkillsFromSessions(): Record<string, Set<string>> {
 	return result;
 }
 
-export function listOpenclawSkills(): {
-	skills: SkillInfo[];
+function listResolvedOpenclawSkills(): {
+	skills: ResolvedSkillInfo[];
 	agents: Record<string, SkillAgentInfo>;
 	total: number;
 } {
@@ -152,7 +155,7 @@ export function listOpenclawSkills(): {
 	);
 
 	const extDir = path.join(OPENCLAW_PKG, "extensions");
-	const extSkills: SkillInfo[] = [];
+	const extSkills: ResolvedSkillInfo[] = [];
 	if (fs.existsSync(extDir)) {
 		for (const ext of fs.readdirSync(extDir)) {
 			const extSkill = readSkillFile(
@@ -190,24 +193,38 @@ export function listOpenclawSkills(): {
 	for (const agent of agentList) {
 		agents[agent.id] = {
 			name: agent.identity?.name || agent.name || agent.id,
-			emoji: agent.identity?.emoji || "🤖",
+			emoji: agent.identity?.emoji || "[bot]",
 		};
 	}
 
 	return { skills: allSkills, agents, total: allSkills.length };
 }
 
+export function listOpenclawSkills(): {
+	skills: SkillInfo[];
+	agents: Record<string, SkillAgentInfo>;
+	total: number;
+} {
+	const { skills, agents, total } = listResolvedOpenclawSkills();
+	return {
+		skills: skills.map(({ location: _location, ...skill }) => skill),
+		agents,
+		total,
+	};
+}
+
 export function getOpenclawSkillContent(
 	source: string,
 	id: string,
 ): { skill: SkillInfo; content: string } | null {
-	const { skills } = listOpenclawSkills();
+	const { skills } = listResolvedOpenclawSkills();
 	const skill = skills.find(
 		(entry) => entry.source === source && entry.id === id,
 	);
 	if (!skill) return null;
+	const { location, ...safeSkill } = skill;
 	return {
-		skill,
-		content: fs.readFileSync(skill.location, "utf-8"),
+		skill: safeSkill,
+		content: fs.readFileSync(location, "utf-8"),
 	};
 }

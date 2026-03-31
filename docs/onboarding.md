@@ -39,6 +39,9 @@ Edit `.env` with real values for operator secrets:
 | `DASHBOARD_CF_ACCESS_AUD` | Cloudflare Access dashboard | Application audience tag (non-local only) |
 
 All sensitive feature flags default to `false` -- no additional configuration needed for read-only monitoring.
+If you need protected diagnostics, set `ENABLE_OUTBOUND_TESTS=true` first and
+leave `ENABLE_LIVE_SEND_DIAGNOSTICS=false` until you intentionally want real
+messages sent.
 
 ### 4. Start Development
 
@@ -73,4 +76,8 @@ PORT=3001 npm run dev
 
 ### Sensitive routes returning 403
 
-This is expected when feature flags are disabled (the default). Enable specific flags in `.env` only when you need to test mutation flows. See `.env.example` for the full list.
+This is expected when feature flags are disabled (the default). Enable specific
+flags in `.env` only when you need to test mutation or diagnostic flows. When
+`ENABLE_OUTBOUND_TESTS=true` but `ENABLE_LIVE_SEND_DIAGNOSTICS=false`, the
+dashboard will run protected diagnostics in dry-run mode instead of sending
+real platform messages.

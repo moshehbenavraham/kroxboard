@@ -12,6 +12,7 @@ next-env.d.ts
 /public/assets/pixel-office/*.mp3
 test-results/
 logs/
+coverage/
 
 # Playwright
 /playwright-report/

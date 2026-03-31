@@ -1,7 +1,7 @@
 # Session 02: Secret containment and token-free operator flows
 
 **Session ID**: `phase00-session02-secret-containment-and-token-free-operator-flows`
-**Status**: Not Started
+**Status**: Complete
 **Estimated Tasks**: ~15-20
 **Estimated Duration**: 2-4 hours
 
@@ -35,9 +35,9 @@ browser-unneeded sensitive metadata.
 
 ## Prerequisites
 
-- [ ] Session 01 auth and operator elevation baseline is available
-- [ ] Browser-visible secret exposure paths are enumerated
-- [ ] Replacement server-side flows are identified for token-dependent features
+- [x] Session 01 auth and operator elevation baseline is available
+- [x] Browser-visible secret exposure paths are enumerated
+- [x] Replacement server-side flows are identified for token-dependent features
 
 ---
 
@@ -52,7 +52,7 @@ browser-unneeded sensitive metadata.
 
 ## Success Criteria
 
-- [ ] `gateway.token` is absent from browser-visible API payloads and DOM links
-- [ ] Client requests no longer carry gateway secrets
-- [ ] Read-only monitoring flows still function without browser token access
-- [ ] The session reduces direct secret-exposure risk before later hardening
+- [x] `gateway.token` is absent from browser-visible API payloads and DOM links
+- [x] Client requests no longer carry gateway secrets
+- [x] Read-only monitoring flows still function without browser token access
+- [x] The session reduces direct secret-exposure risk before later hardening

@@ -117,6 +117,11 @@ ENABLE_OUTBOUND_TESTS=false
 ENABLE_LIVE_SEND_DIAGNOSTICS=false
 ```
 
+`ENABLE_OUTBOUND_TESTS=true` unlocks the protected diagnostic routes, but they
+still run in dry-run mode until `ENABLE_LIVE_SEND_DIAGNOSTICS=true`. Keep
+live-send disabled unless you intentionally want platform diagnostics or alert
+checks to deliver real messages.
+
 ## Docker Deployment
 
 ```bash

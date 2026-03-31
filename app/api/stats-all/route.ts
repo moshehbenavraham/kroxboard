@@ -2,6 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import {
+	applyDiagnosticRateLimitHeaders,
+	enforceDiagnosticRateLimit,
+} from "@/lib/security/diagnostic-rate-limit";
 
 // 30-second in-memory cache.
 let statsCache: { data: unknown; ts: number } | null = null;
@@ -178,10 +182,16 @@ function aggregateToWeeklyMonthly(daily: DayStat[]) {
 	};
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+	const rateLimit = enforceDiagnosticRateLimit(request, "stats_all");
+	if (!rateLimit.ok) return rateLimit.response;
+
 	// Return cached data when available.
 	if (statsCache && Date.now() - statsCache.ts < CACHE_TTL_MS) {
-		return NextResponse.json(statsCache.data);
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json(statsCache.data),
+			rateLimit.metadata,
+		);
 	}
 
 	try {
@@ -238,11 +248,15 @@ export async function GET() {
 
 		const data = { daily, weekly, monthly };
 		statsCache = { data, ts: Date.now() };
-		return NextResponse.json(data);
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json(data),
+			rateLimit.metadata,
+		);
 	} catch (err: unknown) {
-		return NextResponse.json(
-			{ error: err instanceof Error ? err.message : String(err) },
-			{ status: 500 },
+		console.error("[stats-all] failed", err);
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json({ error: "Stats aggregation failed" }, { status: 500 }),
+			rateLimit.metadata,
 		);
 	}
 }

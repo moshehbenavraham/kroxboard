@@ -1,10 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { OperatorActionBanner } from "@/app/components/operator-action-banner";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
-import { buildGatewayUrl } from "@/lib/gateway-url";
+import { buildGatewayHomeLaunchPath } from "@/lib/gateway-launch";
 import { useI18n } from "@/lib/i18n";
-import { getProtectedRequestError } from "@/lib/operator-elevation-client";
+import {
+	createProtectedRequestBannerState,
+	getProtectedRequestBannerState,
+	getProtectedRequestError,
+	type ProtectedRequestBannerState,
+} from "@/lib/operator-elevation-client";
 import {
 	type AgentActivity,
 	syncAgentsToOffice,
@@ -87,6 +93,9 @@ type ReleaseInfo = {
 	publishedAt: string;
 	body: string;
 	htmlUrl: string;
+	cached?: boolean;
+	stale?: boolean;
+	checkedAt?: string;
 };
 
 type AgentStats = {
@@ -167,6 +176,31 @@ function _MiniSparkline({
 				))}
 		</svg>
 	);
+}
+
+type LayoutSaveBannerError = Error & {
+	banner?: ProtectedRequestBannerState;
+};
+
+function createLayoutSaveBannerError(
+	banner: ProtectedRequestBannerState,
+): LayoutSaveBannerError {
+	const error = new Error(banner.message) as LayoutSaveBannerError;
+	error.banner = banner;
+	return error;
+}
+
+function getLayoutSaveBannerFromError(
+	error: unknown,
+	fallbackMessage: string,
+): ProtectedRequestBannerState {
+	if (error && typeof error === "object" && "banner" in error) {
+		const banner = (error as LayoutSaveBannerError).banner;
+		if (banner) return banner;
+	}
+
+	const message = error instanceof Error ? error.message : fallbackMessage;
+	return createProtectedRequestBannerState("error", message);
 }
 
 /** Convert mouse event to tile coordinates */
@@ -316,9 +350,7 @@ export default function PixelOfficePage() {
 	const configAgentsRef = useRef<Map<string, ConfigAgentCard>>(new Map());
 	const contributionsRef = useRef<ContributionData | null>(null);
 	const photographRef = useRef<HTMLImageElement | null>(null);
-	const gatewayRef = useRef<{ port: number; token?: string; host?: string }>({
-		port: 18789,
-	});
+	const gatewayLaunchPathRef = useRef<string>(buildGatewayHomeLaunchPath());
 	const gatewayHealthyRef = useRef<boolean>(true);
 	const gatewaySreRef = useRef<{
 		status: GatewaySreState;
@@ -358,6 +390,7 @@ export default function PixelOfficePage() {
 	const [versionInfo, setVersionInfo] = useState<ReleaseInfo | null>(null);
 	const [versionLoading, setVersionLoading] = useState(false);
 	const [versionLoadFailed, setVersionLoadFailed] = useState(false);
+	const [versionStatusMessage, setVersionStatusMessage] = useState("");
 	const [showIdleRank, setShowIdleRank] = useState(false);
 	const [cachedModelTestResults, setCachedModelTestResults] = useState<Record<
 		string,
@@ -371,9 +404,8 @@ export default function PixelOfficePage() {
 		string,
 		PlatformTestResult | null
 	> | null>(null);
-	const [layoutSaveMessage, setLayoutSaveMessage] = useState<string | null>(
-		null,
-	);
+	const [layoutSaveBanner, setLayoutSaveBanner] =
+		useState<ProtectedRequestBannerState | null>(null);
 	const selectedAgentOpenedAtRef = useRef(0);
 	const tokenRankOpenedAtRef = useRef(0);
 	const modelPanelOpenedAtRef = useRef(0);
@@ -413,20 +445,36 @@ export default function PixelOfficePage() {
 	const [isMobileViewport, setIsMobileViewport] = useState(false);
 	const forceEditorUpdate = useCallback(() => setEditorTick((t) => t + 1), []);
 
-	const fetchVersionInfo = useCallback(async (forceLatest = false) => {
+	const fetchVersionInfo = useCallback(async () => {
 		setVersionLoading(true);
 		setVersionLoadFailed(false);
+		setVersionStatusMessage("");
 		try {
-			const url = forceLatest
-				? "/api/pixel-office/version?force=1"
-				: "/api/pixel-office/version";
-			const res = await fetch(url, { cache: "no-store" });
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const data = await res.json();
+			const res = await fetch("/api/pixel-office/version", {
+				cache: "no-store",
+			});
+			const data = await res.json().catch(() => null);
+			if (!res.ok) {
+				if (typeof data?.rateLimit?.message === "string") {
+					setVersionStatusMessage(data.rateLimit.message);
+					return;
+				}
+				throw new Error(
+					typeof data?.error === "string" ? data.error : `HTTP ${res.status}`,
+				);
+			}
 			if (!data?.tag) throw new Error("Invalid version payload");
 			setVersionInfo(data);
+			setVersionStatusMessage(
+				data.stale
+					? "Showing cached release data after the latest GitHub check failed."
+					: data.cached
+						? "Showing cached release data. Refreshes are bounded server-side."
+						: "Release data refreshed from GitHub. Later checks use the bounded server cache.",
+			);
 		} catch {
 			setVersionLoadFailed(true);
+			setVersionStatusMessage("Release check unavailable.");
 		} finally {
 			setVersionLoading(false);
 		}
@@ -1132,6 +1180,7 @@ export default function PixelOfficePage() {
 						name: agent.name || agent.id,
 						emoji: agent.emoji || "Bot",
 						model: agent.model || "",
+						launchPath: agent.launchPath,
 						platforms: Array.isArray(agent.platforms) ? agent.platforms : [],
 						session: agent.session || undefined,
 					});
@@ -1149,12 +1198,9 @@ export default function PixelOfficePage() {
 				}
 				agentStatsRef.current = map;
 				configAgentsRef.current = configMap;
-				if (data.gateway)
-					gatewayRef.current = {
-						port: data.gateway.port || 18789,
-						token: data.gateway.token,
-						host: data.gateway.host,
-					};
+				if (typeof data.gateway?.launchPath === "string") {
+					gatewayLaunchPathRef.current = data.gateway.launchPath;
+				}
 				if (data.providers) {
 					providersRef.current = data.providers;
 					const accessModeMap: Record<string, "auth" | "api_key"> = {};
@@ -1273,6 +1319,12 @@ export default function PixelOfficePage() {
 		const office = officeRef.current;
 		const editor = editorRef.current;
 		if (!office) return;
+		setLayoutSaveBanner(
+			createProtectedRequestBannerState(
+				"pending",
+				"Saving the pixel office layout.",
+			),
+		);
 		try {
 			const result = await runProtectedRequest<{
 				success?: boolean;
@@ -1287,19 +1339,29 @@ export default function PixelOfficePage() {
 					}),
 			});
 			if (!result.ok) {
-				throw new Error(getProtectedRequestError(result));
+				const banner =
+					getProtectedRequestBannerState(result) ??
+					createProtectedRequestBannerState(
+						"error",
+						getProtectedRequestError(result) || "Failed to save layout",
+					);
+				setLayoutSaveBanner(banner);
+				throw createLayoutSaveBannerError(banner);
 			}
 			if (!result.data.success) {
-				throw new Error(result.data.error || "Failed to save layout");
+				const message = result.data.error || "Failed to save layout";
+				const banner = createProtectedRequestBannerState("invalid", message);
+				setLayoutSaveBanner(banner);
+				throw createLayoutSaveBannerError(banner);
 			}
 			savedLayoutRef.current = office.layout;
 			editor.isDirty = false;
-			setLayoutSaveMessage(null);
+			setLayoutSaveBanner(null);
 			forceEditorUpdate();
 		} catch (error: unknown) {
-			const message =
-				error instanceof Error ? error.message : "Failed to save layout";
-			setLayoutSaveMessage(message);
+			setLayoutSaveBanner(
+				getLayoutSaveBannerFromError(error, "Failed to save layout"),
+			);
 		}
 	}, [forceEditorUpdate, runProtectedRequest]);
 
@@ -1638,22 +1700,10 @@ export default function PixelOfficePage() {
 					})
 				) {
 					// Click on PC - open gateway chat for main agent
-					const gw = gatewayRef.current;
-					const sessionKey = "agent:main:main";
-					let chatUrl = buildGatewayUrl(
-						gw.port,
-						"/chat",
-						{ session: sessionKey },
-						gw.host,
-					);
-					if (gw.token)
-						chatUrl = buildGatewayUrl(
-							gw.port,
-							"/chat",
-							{ session: sessionKey, token: gw.token },
-							gw.host,
-						);
-					window.open(chatUrl, "_blank");
+					const chatUrl =
+						configAgentsRef.current.get("main")?.launchPath ||
+						gatewayLaunchPathRef.current;
+					window.open(chatUrl, "_blank", "noopener,noreferrer");
 				} else if (
 					office.layout.furniture.some((f) => {
 						if (f.uid !== "library-r") return false;
@@ -1724,7 +1774,7 @@ export default function PixelOfficePage() {
 				) {
 					// Click on phone - show version info
 					setShowPhonePanel(true);
-					void fetchVersionInfo(true);
+					void fetchVersionInfo();
 				} else if (
 					office.layout.furniture.some((f) => {
 						if (f.type !== "sofa") return false;
@@ -2825,7 +2875,6 @@ export default function PixelOfficePage() {
 							agentStatsRef.current.get(selectedAgentId) ??
 							configAgent?.session;
 						const displayState = runtimeAgent?.state || "offline";
-						const gw = gatewayRef.current;
 
 						if (!runtimeAgent && !configAgent) return null;
 
@@ -2834,6 +2883,7 @@ export default function PixelOfficePage() {
 							name: configAgent?.name || runtimeAgent?.name || selectedAgentId,
 							emoji: configAgent?.emoji || runtimeAgent?.emoji || "Bot",
 							model: configAgent?.model || "",
+							launchPath: configAgent?.launchPath,
 							platforms: configAgent?.platforms || [],
 							session: stats
 								? {
@@ -2875,9 +2925,6 @@ export default function PixelOfficePage() {
 									</div>
 									<AgentCard
 										agent={cardAgent}
-										gatewayPort={gw.port}
-										gatewayToken={gw.token}
-										gatewayHost={gw.host}
 										t={t}
 										testResult={cachedModelTestResults?.[selectedAgentId]}
 										platformTestResults={cachedPlatformTestResults || undefined}
@@ -3270,6 +3317,10 @@ export default function PixelOfficePage() {
 										<div className="text-xs text-[var(--text-muted)] py-8 text-center">
 											{t("common.loading")}
 										</div>
+									) : !info && versionStatusMessage ? (
+										<div className="text-xs text-[var(--text-muted)] py-8 text-center">
+											{versionStatusMessage}
+										</div>
 									) : !info && versionLoadFailed ? (
 										<div className="text-xs text-[var(--text-muted)] py-8 text-center">
 											{t("common.loadError")}
@@ -3280,6 +3331,11 @@ export default function PixelOfficePage() {
 										</div>
 									) : (
 										<div className="space-y-3">
+											{versionStatusMessage ? (
+												<div className="rounded border border-[var(--accent)]/20 bg-[var(--accent)]/10 px-3 py-2 text-[11px] text-[var(--text-muted)]">
+													{versionStatusMessage}
+												</div>
+											) : null}
 											<div className="flex items-center justify-between">
 												<span className="text-sm font-bold text-[var(--accent)]">
 													{info.name}
@@ -3414,9 +3470,13 @@ export default function PixelOfficePage() {
 						);
 					})()}
 
-				{layoutSaveMessage && (
-					<div className="absolute left-1/2 top-4 z-30 -translate-x-1/2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-200 shadow-lg">
-						{layoutSaveMessage}
+				{layoutSaveBanner && (
+					<div className="absolute left-1/2 top-4 z-30 w-[min(32rem,calc(100%-2rem))] -translate-x-1/2">
+						<OperatorActionBanner
+							tone={layoutSaveBanner.tone}
+							message={layoutSaveBanner.message}
+							className="shadow-lg"
+						/>
 					</div>
 				)}
 

@@ -15,15 +15,27 @@ export function middleware(request: NextRequest) {
 	response.headers.set("X-Frame-Options", "DENY");
 	response.headers.set("X-XSS-Protection", "1; mode=block");
 	response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+	response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+	response.headers.set("Cross-Origin-Resource-Policy", "same-origin");
+	response.headers.set("Origin-Agent-Cluster", "?1");
+	response.headers.set(
+		"Permissions-Policy",
+		"camera=(), geolocation=(), microphone=()",
+	);
+	response.headers.set("X-DNS-Prefetch-Control", "off");
 
 	// Basic Content Security Policy
 	const csp = `
     default-src 'self';
+    base-uri 'self';
+    frame-ancestors 'none';
+    object-src 'none';
     script-src 'self' 'unsafe-inline' 'unsafe-eval';
     style-src 'self' 'unsafe-inline';
     img-src 'self' data: blob:;
     font-src 'self' data:;
-    connect-src 'self';
+    connect-src 'self' ws: wss:;
+    form-action 'self';
   `
 		.replace(/\s{2,}/g, " ")
 		.trim();
@@ -33,8 +45,7 @@ export function middleware(request: NextRequest) {
 	// Using IP as the identifier. If behind Cloudflare, use CF-Connecting-IP
 	const ip =
 		request.headers.get("cf-connecting-ip") ??
-		request.headers.get("x-forwarded-for") ??
-		request.ip ??
+		request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
 		"127.0.0.1";
 
 	const now = Date.now();
@@ -68,6 +79,10 @@ export function middleware(request: NextRequest) {
 	response.headers.set(
 		"X-RateLimit-Remaining",
 		String(Math.max(0, MAX_REQUESTS_PER_WINDOW - record.count)),
+	);
+	response.headers.set(
+		"X-RateLimit-Reset",
+		String(windowStart + RATE_LIMIT_WINDOW_MS),
 	);
 
 	return response;

@@ -2,6 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 import { getConfigCache, setConfigCache } from "@/lib/config-cache";
+import {
+	buildGatewayAgentLaunchPath,
+	buildGatewayHomeLaunchPath,
+	buildGatewayPlatformLaunchPath,
+} from "@/lib/gateway-launch";
 import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
 import { shouldHidePlatformChannel } from "@/lib/platforms";
 
@@ -227,7 +232,7 @@ function getGroupChats(
 			channel: v.channel,
 			agents: Array.from(v.agents).map((id) => ({
 				id,
-				emoji: agentMap[id]?.emoji || "🤖",
+				emoji: agentMap[id]?.emoji || "[bot]",
 				name: agentMap[id]?.name || id,
 			})),
 		}));
@@ -438,23 +443,21 @@ export async function GET() {
 					agent.workspace,
 				);
 				const name = identityName || agent.name || id;
-				const emoji = agent.identity?.emoji || "🤖";
+				const emoji = agent.identity?.emoji || "[bot]";
 				const model = normalizeModelRef(agent.model, defaultModel);
+				const launchPath =
+					buildGatewayAgentLaunchPath(id) || buildGatewayHomeLaunchPath();
 
 				// Resolve bound platforms.
 				const platforms: {
 					name: string;
 					accountId?: string;
-					appId?: string;
-					botOpenId?: string;
-					botUserId?: string;
+					launchPath?: string;
 				}[] = [];
 				const addPlatform = (platform: {
 					name: string;
 					accountId?: string;
-					appId?: string;
-					botOpenId?: string;
-					botUserId?: string;
+					launchPath?: string;
 				}) => {
 					if (!platform?.name) return;
 					const exists = platforms.some(
@@ -471,27 +474,27 @@ export async function GET() {
 				);
 				if (feishuBinding) {
 					const accountId = feishuBinding.match?.accountId || id;
-					const acc = feishuAccounts[accountId];
-					const appId = acc?.appId;
 					const userOpenId = feishuUserOpenIds[id] || null;
 					addPlatform({
 						name: "feishu",
 						accountId,
-						appId,
-						...(userOpenId && { botOpenId: userOpenId }),
+						...(userOpenId && {
+							launchPath:
+								buildGatewayPlatformLaunchPath(id, "feishu") || undefined,
+						}),
 					});
 				}
 
 				// If no explicit binding, check if there's a feishu account matching this agent id
 				if (!feishuBinding && feishuAccounts[id]) {
-					const acc = feishuAccounts[id];
-					const appId = acc?.appId;
 					const userOpenId = feishuUserOpenIds[id] || null;
 					addPlatform({
 						name: "feishu",
 						accountId: id,
-						appId,
-						...(userOpenId && { botOpenId: userOpenId }),
+						...(userOpenId && {
+							launchPath:
+								buildGatewayPlatformLaunchPath(id, "feishu") || undefined,
+						}),
 					});
 				}
 
@@ -504,26 +507,32 @@ export async function GET() {
 						channels.feishu.enabled !== false
 					) {
 						// main gets feishu if channel is configured and not explicitly disabled
-						const acc = feishuAccounts.main;
-						const appId = acc?.appId || channels.feishu?.appId;
 						const userOpenId = feishuUserOpenIds.main || null;
 						addPlatform({
 							name: "feishu",
 							accountId: "main",
-							appId,
-							...(userOpenId && { botOpenId: userOpenId }),
+							...(userOpenId && {
+								launchPath:
+									buildGatewayPlatformLaunchPath(id, "feishu") || undefined,
+							}),
 						});
 					}
 
 					// The main agent shows all enabled channels by default; Feishu is handled separately.
 					for (const channelName of enabledChannelNames) {
 						if (channelName === "feishu") continue;
-						const botUserId =
+						const hasLaunchTarget =
 							directPeerIdsByChannel[channelName]?.[id] ||
 							(channelName === "discord"
 								? discordDmAllowFrom[0] || null
 								: null);
-						addPlatform({ name: channelName, ...(botUserId && { botUserId }) });
+						addPlatform({
+							name: channelName,
+							...(hasLaunchTarget && {
+								launchPath:
+									buildGatewayPlatformLaunchPath(id, channelName) || undefined,
+							}),
+						});
 					}
 				}
 
@@ -541,7 +550,8 @@ export async function GET() {
 							continue;
 						if (seenBindingChannels.has(channelName)) continue;
 						seenBindingChannels.add(channelName);
-						const botUserId = directPeerIdsByChannel[channelName]?.[id] || null;
+						const hasLaunchTarget =
+							directPeerIdsByChannel[channelName]?.[id] || null;
 						const accountId =
 							typeof binding?.match?.accountId === "string"
 								? binding.match.accountId
@@ -549,12 +559,15 @@ export async function GET() {
 						addPlatform({
 							name: channelName,
 							...(accountId && { accountId }),
-							...(botUserId && { botUserId }),
+							...(hasLaunchTarget && {
+								launchPath:
+									buildGatewayPlatformLaunchPath(id, channelName) || undefined,
+							}),
 						});
 					}
 				}
 
-				return { id, name, emoji, model, platforms };
+				return { id, name, emoji, model, launchPath, platforms };
 			}),
 		);
 
@@ -707,9 +720,7 @@ export async function GET() {
 			providers,
 			defaults: { model: defaultModel, fallbacks },
 			gateway: {
-				port: config.gateway?.port || 18789,
-				token: config.gateway?.auth?.token || "",
-				host: config.gateway?.host || config.gateway?.hostname || "",
+				launchPath: buildGatewayHomeLaunchPath(),
 			},
 			groupChats,
 		};

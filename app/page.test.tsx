@@ -15,14 +15,19 @@ vi.mock("./gateway-status", () => ({
 
 vi.mock("./components/agent-card", () => ({
 	AgentCard: ({ agent, onModelChange }: any) => (
-		<button
-			type="button"
-			onClick={() => {
-				void onModelChange?.(agent.id, "provider/model-two").catch(() => null);
-			}}
-		>
-			change-model-{agent.id}
-		</button>
+		<div>
+			<div>{`launch-path-${agent.id}:${agent.launchPath || "missing"}`}</div>
+			<button
+				type="button"
+				onClick={() => {
+					void onModelChange?.(agent.id, "provider/model-two").catch(
+						() => null,
+					);
+				}}
+			>
+				change-model-{agent.id}
+			</button>
+		</div>
 	),
 	ModelBadge: ({ model }: { model: string }) => <span>{model}</span>,
 }));
@@ -73,6 +78,7 @@ describe("Home page operator elevation wiring", () => {
 							name: "Main",
 							emoji: "M",
 							model: "provider/model-one",
+							launchPath: "/gateway/chat?launch=agent-main",
 							platforms: [],
 						},
 					],
@@ -81,7 +87,7 @@ describe("Home page operator elevation wiring", () => {
 						fallbacks: [],
 					},
 					providers: [],
-					gateway: { port: 18789 },
+					gateway: { launchPath: "/gateway/chat" },
 				});
 			}
 			if (url === "/api/stats-all") {
@@ -113,6 +119,18 @@ describe("Home page operator elevation wiring", () => {
 					403,
 				);
 			}
+			if (url === "/api/test-platforms") {
+				return jsonResponse({
+					results: [],
+					diagnostic: {
+						mode: "dry_run",
+						message:
+							"Live-send diagnostics are disabled. Running dry-run checks only.",
+						liveSendEnabled: false,
+						liveSendRequested: false,
+					},
+				});
+			}
 			throw new Error(`Unexpected fetch: ${url}`);
 		});
 		vi.stubGlobal("fetch", fetchMock);
@@ -128,11 +146,37 @@ describe("Home page operator elevation wiring", () => {
 		const changeButton = await screen.findByRole("button", {
 			name: "change-model-main",
 		});
+		expect(
+			screen.getByText("launch-path-main:/gateway/chat?launch=agent-main"),
+		).toBeTruthy();
 		fireEvent.click(changeButton);
 
 		await waitFor(() => {
 			expect(screen.getByText("Operator access denied")).toBeTruthy();
 		});
+		expect(screen.getByText("Access denied")).toBeTruthy();
 		expect(screen.queryByRole("dialog")).toBeNull();
+	});
+
+	it("shows a dry-run banner when platform diagnostics return dry-run metadata", async () => {
+		render(
+			<OperatorElevationProvider>
+				<Home />
+			</OperatorElevationProvider>,
+		);
+
+		const testPlatformsButton = await screen.findByRole("button", {
+			name: "home.testPlatforms",
+		});
+		fireEvent.click(testPlatformsButton);
+
+		await waitFor(() => {
+			expect(
+				screen.getByText(
+					"Live-send diagnostics are disabled. Running dry-run checks only.",
+				),
+			).toBeTruthy();
+		});
+		expect(screen.getByText("Dry-run mode")).toBeTruthy();
 	});
 });

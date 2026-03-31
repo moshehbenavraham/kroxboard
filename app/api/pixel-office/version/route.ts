@@ -1,13 +1,25 @@
 import { NextResponse } from "next/server";
+import {
+	applyDiagnosticRateLimitHeaders,
+	enforceDiagnosticRateLimit,
+} from "@/lib/security/diagnostic-rate-limit";
 
 const REPO = process.env.OPENCLAW_REPO || "openclaw/openclaw";
 
 // Server-side cache: 1h TTL
-let cache: { data: unknown; ts: number } | null = null;
+type ReleasePayload = {
+	tag: string;
+	name: string;
+	publishedAt: string;
+	body: string;
+	htmlUrl: string;
+};
+
+let cache: { data: ReleasePayload; ts: number } | null = null;
 const CACHE_TTL = 60 * 60 * 1000;
 const REVALIDATE_SECONDS = 60 * 60;
 
-async function fetchLatestRelease(forceLatest = false) {
+async function fetchLatestRelease(): Promise<ReleasePayload> {
 	const res = await fetch(
 		`https://api.github.com/repos/${REPO}/releases/latest`,
 		{
@@ -17,9 +29,8 @@ async function fetchLatestRelease(forceLatest = false) {
 					? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` }
 					: {}),
 			},
-			...(forceLatest
-				? { cache: "no-store" as const }
-				: { next: { revalidate: REVALIDATE_SECONDS } }),
+			next: { revalidate: REVALIDATE_SECONDS },
+			signal: AbortSignal.timeout(10_000),
 		},
 	);
 	if (!res.ok) throw new Error(`GitHub API ${res.status}`);
@@ -34,18 +45,53 @@ async function fetchLatestRelease(forceLatest = false) {
 }
 
 export async function GET(request: Request) {
+	const rateLimit = enforceDiagnosticRateLimit(request, "pixel_office_version");
+	if (!rateLimit.ok) return rateLimit.response;
+
+	const now = Date.now();
 	try {
-		const forceLatest = new URL(request.url).searchParams.get("force") === "1";
-		if (!forceLatest && cache && Date.now() - cache.ts < CACHE_TTL) {
-			return NextResponse.json(cache.data);
+		if (cache && now - cache.ts < CACHE_TTL) {
+			return applyDiagnosticRateLimitHeaders(
+				NextResponse.json({
+					...cache.data,
+					cached: true,
+					stale: false,
+					checkedAt: new Date(cache.ts).toISOString(),
+				}),
+				rateLimit.metadata,
+			);
 		}
-		const data = await fetchLatestRelease(forceLatest);
-		cache = { data, ts: Date.now() };
-		return NextResponse.json(data);
+
+		const data = await fetchLatestRelease();
+		cache = { data, ts: now };
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json({
+				...data,
+				cached: false,
+				stale: false,
+				checkedAt: new Date(now).toISOString(),
+			}),
+			rateLimit.metadata,
+		);
 	} catch (err: unknown) {
-		return NextResponse.json(
-			{ error: err instanceof Error ? err.message : String(err) },
-			{ status: 500 },
+		console.error("[pixel-office/version] failed", err);
+		if (cache) {
+			return applyDiagnosticRateLimitHeaders(
+				NextResponse.json({
+					...cache.data,
+					cached: true,
+					stale: true,
+					checkedAt: new Date(cache.ts).toISOString(),
+				}),
+				rateLimit.metadata,
+			);
+		}
+		return applyDiagnosticRateLimitHeaders(
+			NextResponse.json(
+				{ error: "Release check unavailable" },
+				{ status: 502 },
+			),
+			rateLimit.metadata,
 		);
 	}
 }

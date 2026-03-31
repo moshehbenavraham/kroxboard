@@ -17,22 +17,22 @@ Canonical finding definitions and delivery mapping live in `.spec_system/PRD/PRD
 
 | ID | Severity | Title | Status | Planned Session |
 |----|----------|-------|--------|-----------------|
-| SYN-01 | Critical | Gateway auth token leaked to any network client | Open | 00-02 |
+| SYN-01 | Critical | Gateway auth token leaked to any network client | Fixed | 00-02 |
 | SYN-02 | Critical | No application-level authentication | Open | 00-01 |
 | SYN-03 | Critical | Unauthenticated permanent runtime configuration mutation | Open | 00-01 / 00-03 / 01-02 |
 | SYN-04 | Critical | Unauthenticated outbound messaging to real users | Open | 00-03 / 01-03 |
-| SYN-05 | Critical | Zero-click side-effect triggering via `GET` aliases | Open | 00-03 |
+| SYN-05 | Critical | Zero-click side-effect triggering via `GET` aliases | Fixed | 00-03 |
 | SYN-06 | High | Path traversal via unvalidated `[agentId]` URL segments | Open | 01-01 |
 | SYN-07 | High | CSRF on all mutating endpoints | Open | 01-02 |
 | SYN-08 | High | LLM API credit exhaustion and self-SSRF amplification | Open | 01-03 |
 | SYN-09 | High | External platform rate limit lockout | Open | 01-03 |
-| SYN-10 | High | Docker default binds to all network interfaces | Open | 00-03 |
+| SYN-10 | High | Docker default binds to all network interfaces | Fixed | 00-03 |
 | SYN-11 | High | Attacker-controlled inputs forwarded to gateway | Open | 01-01 / 01-02 |
 | SYN-12 | High | AlertMonitor auto-triggers full attack pipeline on every page load | Open | 01-03 / 03-02 |
 | SYN-13 | High | Uncached heavy endpoints with cascading unbounded reads | Open | 01-03 / 02-03 |
 | SYN-14 | Medium | Missing security response headers | Open | 01-03 |
-| SYN-15 | Medium | Platform identity metadata and user IDs disclosed | Open | 00-02 / 02-03 |
-| SYN-16 | Medium | Absolute filesystem paths in skill listings | Open | 00-02 / 02-03 |
+| SYN-15 | Medium | Platform identity metadata and user IDs disclosed | Fixed | 00-02 / 02-03 |
+| SYN-16 | Medium | Absolute filesystem paths in skill listings | Fixed | 00-02 / 02-03 |
 | SYN-17 | Medium | Synchronous I/O blocks Node.js event loop | Open | 02-03 |
 | SYN-18 | Medium | No input validation on write payloads | Open | 02-01 |
 | SYN-19 | Medium | Duplicate CLI bridge with divergent behavior | Open | 02-02 |

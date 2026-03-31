@@ -11,6 +11,7 @@ import {
 } from "react";
 import { OperatorElevationDialog } from "@/app/components/operator-elevation-dialog";
 import {
+	getProtectedRequestError,
 	isOperatorSessionStatePayload,
 	type ProtectedRequestOptions,
 	type ProtectedRequestResult,
@@ -174,7 +175,7 @@ export function OperatorElevationProvider({
 					return;
 				}
 
-				setDialogError(result.error);
+				setDialogError(getProtectedRequestError(result));
 				setDialogPending(false);
 			} catch (error) {
 				setDialogError(

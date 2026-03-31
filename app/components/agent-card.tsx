@@ -1,15 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { buildGatewayUrl } from "@/lib/gateway-url";
 import { getPlatformDisplayName } from "@/lib/platforms";
 
 export interface AgentPlatform {
 	name: string;
 	accountId?: string;
-	appId?: string;
-	botOpenId?: string;
-	botUserId?: string;
+	launchPath?: string;
 }
 
 export interface AgentCardSession {
@@ -28,6 +25,7 @@ export interface AgentCardAgent {
 	name: string;
 	emoji: string;
 	model: string;
+	launchPath?: string;
 	platforms: AgentPlatform[];
 	session?: AgentCardSession;
 }
@@ -125,7 +123,7 @@ function ErrorStatusWithCopy({
 			className={`group relative inline-flex items-center ${className || ""}`}
 			onMouseLeave={() => setCopyState("idle")}
 		>
-			<span className="text-red-400 text-sm cursor-help">❌</span>
+			<span className="text-red-400 text-sm cursor-help">ERR</span>
 			<span
 				aria-hidden="true"
 				className="absolute left-full top-1/2 z-40 hidden h-8 w-2 -translate-y-1/2 bg-transparent group-hover:block group-focus-within:block"
@@ -154,17 +152,11 @@ function ErrorStatusWithCopy({
 function PlatformBadge({
 	platform,
 	agentId,
-	gatewayPort,
-	gatewayToken,
-	gatewayHost,
 	t,
 	testResult,
 }: {
 	platform: AgentPlatform;
 	agentId: string;
-	gatewayPort: number;
-	gatewayToken?: string;
-	gatewayHost?: string;
 	t: TFunc;
 	testResult?: PlatformTestResult | null;
 }) {
@@ -228,28 +220,6 @@ function PlatformBadge({
 	const meta = knownMeta[displayName];
 	const logoSizeClass = meta?.logoSizeClass || "w-3.5 h-3.5";
 
-	let sessionKey: string;
-	if (pName === "feishu" && platform.botOpenId) {
-		sessionKey = `agent:${agentId}:feishu:direct:${platform.botOpenId}`;
-	} else if (platform.botUserId) {
-		sessionKey = `agent:${agentId}:${pName}:direct:${platform.botUserId}`;
-	} else {
-		sessionKey = `agent:${agentId}:main`;
-	}
-	let sessionUrl = buildGatewayUrl(
-		gatewayPort,
-		"/chat",
-		{ session: sessionKey },
-		gatewayHost,
-	);
-	if (gatewayToken)
-		sessionUrl = buildGatewayUrl(
-			gatewayPort,
-			"/chat",
-			{ session: sessionKey, token: gatewayToken },
-			gatewayHost,
-		);
-
 	const badgeStyle =
 		meta?.badgeStyle ||
 		"bg-gray-500/20 text-gray-300 border border-gray-500/30 hover:bg-gray-500/40 hover:border-gray-400";
@@ -257,55 +227,90 @@ function PlatformBadge({
 	const labelRaw =
 		translated !== `platform.${displayName}` ? translated : displayName;
 	const label = labelRaw.replace(/^[^\p{L}\p{N}]+/u, "").trim() || displayName;
+	const launchLabel = `${label} chat for ${agentId}`;
 
 	return (
 		<div className="inline-flex items-center gap-1.5 max-w-full">
-			<a
-				href={sessionUrl}
-				target="_blank"
-				rel="noopener noreferrer"
-				onClick={(e) => e.stopPropagation()}
-				title={t("agent.openChat")}
-				className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all hover:scale-105 hover:shadow-md min-w-0 ${badgeWidthClass} ${badgeStyle}`}
-			>
-				{meta ? (
-					<img
-						src={meta.remoteLogoSrc}
-						alt={`${label} logo`}
-						className={`${logoSizeClass} shrink-0`}
-						onError={(e) => {
-							if (e.currentTarget.dataset.fallbackApplied === "1") return;
-							e.currentTarget.dataset.fallbackApplied = "1";
-							e.currentTarget.src = meta.logoFallbackSrc;
-						}}
-					/>
-				) : (
-					<span className="inline-flex w-3.5 h-3.5 items-center justify-center rounded bg-white/10 text-[9px] font-semibold shrink-0">
-						{pName.slice(0, 2).toUpperCase()}
-					</span>
-				)}
-				<span className="shrink-0">{label}</span>
-				{pName === "feishu" && platform.accountId && (
-					<span className="opacity-60 truncate max-w-[4.5rem]">
-						({platform.accountId})
-					</span>
-				)}
-				<span className="opacity-50 text-[10px]">↗</span>
-			</a>
+			{platform.launchPath ? (
+				<a
+					href={platform.launchPath}
+					target="_blank"
+					rel="noopener noreferrer"
+					onClick={(e) => e.stopPropagation()}
+					title={t("agent.openChat")}
+					aria-label={launchLabel}
+					className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all hover:scale-105 hover:shadow-md min-w-0 ${badgeWidthClass} ${badgeStyle}`}
+				>
+					{meta ? (
+						<img
+							src={meta.remoteLogoSrc}
+							alt={`${label} logo`}
+							className={`${logoSizeClass} shrink-0`}
+							onError={(e) => {
+								if (e.currentTarget.dataset.fallbackApplied === "1") return;
+								e.currentTarget.dataset.fallbackApplied = "1";
+								e.currentTarget.src = meta.logoFallbackSrc;
+							}}
+						/>
+					) : (
+						<span className="inline-flex w-3.5 h-3.5 items-center justify-center rounded bg-white/10 text-[9px] font-semibold shrink-0">
+							{pName.slice(0, 2).toUpperCase()}
+						</span>
+					)}
+					<span className="shrink-0">{label}</span>
+					{pName === "feishu" && platform.accountId && (
+						<span className="opacity-60 truncate max-w-[4.5rem]">
+							({platform.accountId})
+						</span>
+					)}
+					<span className="opacity-50 text-[10px]">-&gt;</span>
+				</a>
+			) : (
+				<span
+					role="status"
+					aria-label={`${launchLabel} unavailable`}
+					title={`${label} chat unavailable`}
+					className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-medium min-w-0 opacity-70 ${badgeWidthClass} border border-dashed border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)]`}
+				>
+					{meta ? (
+						<img
+							src={meta.remoteLogoSrc}
+							alt={`${label} logo`}
+							className={`${logoSizeClass} shrink-0 opacity-70`}
+							onError={(e) => {
+								if (e.currentTarget.dataset.fallbackApplied === "1") return;
+								e.currentTarget.dataset.fallbackApplied = "1";
+								e.currentTarget.src = meta.logoFallbackSrc;
+							}}
+						/>
+					) : (
+						<span className="inline-flex w-3.5 h-3.5 items-center justify-center rounded bg-white/10 text-[9px] font-semibold shrink-0">
+							{pName.slice(0, 2).toUpperCase()}
+						</span>
+					)}
+					<span className="shrink-0">{label}</span>
+					{pName === "feishu" && platform.accountId && (
+						<span className="opacity-60 truncate max-w-[4.5rem]">
+							({platform.accountId})
+						</span>
+					)}
+					<span className="opacity-60 text-[10px]">n/a</span>
+				</span>
+			)}
 			{testResult === undefined ? (
 				<span className="inline-flex w-5 justify-end text-xs text-[var(--text-muted)]">
 					--
 				</span>
 			) : testResult === null ? (
 				<span className="inline-flex w-5 justify-end text-xs text-[var(--text-muted)] animate-pulse">
-					⏳
+					...
 				</span>
 			) : testResult.ok ? (
 				<span
 					className="inline-flex w-5 justify-end text-green-400 text-sm cursor-help"
-					title={`${testResult.elapsed}ms${testResult.detail ? ` · ${testResult.detail}` : testResult.reply ? ` · ${testResult.reply}` : ""}`}
+					title={`${testResult.elapsed}ms${testResult.detail ? ` | ${testResult.detail}` : testResult.reply ? ` | ${testResult.reply}` : ""}`}
 				>
-					✅
+					OK
 				</span>
 			) : (
 				<ErrorStatusWithCopy
@@ -397,7 +402,7 @@ function MiniSparkline({
 				width={width}
 				height={height}
 				className="inline-block align-middle"
-				aria-label={data.map((v) => (v ? formatMs(v) : "-")).join(" → ")}
+				aria-label={data.map((v) => (v ? formatMs(v) : "-")).join(" -> ")}
 			>
 				<defs>
 					<linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
@@ -471,9 +476,6 @@ function AgentStatusBadge({ state, t }: { state?: string; t: TFunc }) {
 
 export function AgentCard({
 	agent,
-	gatewayPort,
-	gatewayToken,
-	gatewayHost,
 	t,
 	testResult,
 	platformTestResults,
@@ -485,9 +487,6 @@ export function AgentCard({
 	onModelChange,
 }: {
 	agent: AgentCardAgent;
-	gatewayPort: number;
-	gatewayToken?: string;
-	gatewayHost?: string;
 	t: TFunc;
 	testResult?: AgentModelTestResult | null;
 	platformTestResults?: Record<string, PlatformTestResult | null>;
@@ -502,20 +501,6 @@ export function AgentCard({
 	const [draftModel, setDraftModel] = useState(agent.model);
 	const [isSavingModel, setIsSavingModel] = useState(false);
 	const [modelSaveError, setModelSaveError] = useState<string | null>(null);
-	const sessionKey = `agent:${agent.id}:main`;
-	let sessionUrl = buildGatewayUrl(
-		gatewayPort,
-		"/chat",
-		{ session: sessionKey },
-		gatewayHost,
-	);
-	if (gatewayToken)
-		sessionUrl = buildGatewayUrl(
-			gatewayPort,
-			"/chat",
-			{ session: sessionKey, token: gatewayToken },
-			gatewayHost,
-		);
 	const modelProvider = agent.model.includes("/")
 		? agent.model.split("/", 1)[0]
 		: "default";
@@ -582,28 +567,36 @@ export function AgentCard({
 						Agent ID
 					</span>
 					<div className="flex items-center gap-2">
-						<a
-							href={sessionUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							onClick={(e) => e.stopPropagation()}
-							className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all hover:scale-105 hover:shadow-md bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent)]/40"
-						>
-							{agent.id}
-							<span className="opacity-50 text-[10px]">↗</span>
-						</a>
+						{agent.launchPath ? (
+							<a
+								href={agent.launchPath}
+								target="_blank"
+								rel="noopener noreferrer"
+								onClick={(e) => e.stopPropagation()}
+								aria-label={`Open main chat for ${agent.id}`}
+								className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer transition-all hover:scale-105 hover:shadow-md bg-[var(--accent)]/20 text-[var(--accent)] border border-[var(--accent)]/30 hover:bg-[var(--accent)]/40"
+							>
+								{agent.id}
+								<span className="opacity-50 text-[10px]">-&gt;</span>
+							</a>
+						) : (
+							<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border border-dashed border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)]">
+								{agent.id}
+								<span className="opacity-60 text-[10px]">n/a</span>
+							</span>
+						)}
 						{sessionTestResult === undefined ? (
 							<span className="text-xs text-[var(--text-muted)]">--</span>
 						) : sessionTestResult === null ? (
 							<span className="text-xs text-[var(--text-muted)] animate-pulse">
-								⏳
+								...
 							</span>
 						) : sessionTestResult.ok ? (
 							<span
 								className="text-green-400 text-sm cursor-help"
-								title={`${sessionTestResult.elapsed}ms${sessionTestResult.reply ? ` · ${sessionTestResult.reply}` : ""}`}
+								title={`${sessionTestResult.elapsed}ms${sessionTestResult.reply ? ` | ${sessionTestResult.reply}` : ""}`}
 							>
-								✅
+								OK
 							</span>
 						) : (
 							<ErrorStatusWithCopy error={sessionTestResult.error} />
@@ -620,14 +613,14 @@ export function AgentCard({
 							<span className="text-xs text-[var(--text-muted)]">--</span>
 						) : testResult === null ? (
 							<span className="text-xs text-[var(--text-muted)] animate-pulse">
-								⏳
+								...
 							</span>
 						) : testResult.ok ? (
 							<span
 								className="text-green-400 text-sm"
-								title={`${testResult.elapsed}ms${testResult.text ? ` · ${testResult.text}` : ""}`}
+								title={`${testResult.elapsed}ms${testResult.text ? ` | ${testResult.text}` : ""}`}
 							>
-								✅
+								OK
 							</span>
 						) : (
 							<ErrorStatusWithCopy error={testResult.error} />
@@ -727,9 +720,6 @@ export function AgentCard({
 									<PlatformBadge
 										platform={p}
 										agentId={agent.id}
-										gatewayPort={gatewayPort}
-										gatewayToken={gatewayToken}
-										gatewayHost={gatewayHost}
 										t={t}
 										testResult={pResult}
 									/>
@@ -740,14 +730,14 @@ export function AgentCard({
 											</span>
 										) : dmResult === null ? (
 											<span className="text-sm text-[var(--text-muted)] animate-pulse">
-												DM Session: ⏳
+												DM Session: ...
 											</span>
 										) : dmResult.ok ? (
 											<span
 												className="text-green-400 text-sm cursor-help"
-												title={`DM Session ${dmResult.elapsed}ms${dmResult.detail ? ` · ${dmResult.detail}` : ""}`}
+												title={`DM Session ${dmResult.elapsed}ms${dmResult.detail ? ` | ${dmResult.detail}` : ""}`}
 											>
-												DM Session: ✅
+												DM Session: OK
 											</span>
 										) : (
 											<span className="text-red-400 text-sm inline-flex items-center gap-1">
@@ -774,14 +764,14 @@ export function AgentCard({
 									onClick={(e) => e.stopPropagation()}
 									className="text-[var(--accent)] hover:underline cursor-pointer"
 								>
-									{agent.session.sessionCount} →
+									{agent.session.sessionCount} -&gt;
 								</a>
 								<a
 									href={`/stats?agent=${agent.id}`}
 									onClick={(e) => e.stopPropagation()}
 									className="text-[var(--accent)] hover:underline cursor-pointer text-[10px]"
 								>
-									📊 {t("agent.stats")}
+									Stats {t("agent.stats")}
 								</a>
 							</div>
 						</div>
@@ -835,7 +825,7 @@ export function AgentCard({
 								if (validVals.length >= 2) {
 									const last = validVals[validVals.length - 1];
 									const prev = validVals[validVals.length - 2];
-									arrow = last > prev ? "↗" : last < prev ? "↘" : "";
+									arrow = last > prev ? "^" : last < prev ? "v" : "";
 								}
 								const colorClass = !val
 									? "text-[var(--text-muted)]"

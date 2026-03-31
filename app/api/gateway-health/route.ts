@@ -1,6 +1,7 @@
 import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { NextResponse } from "next/server";
+import { buildGatewayHomeLaunchPath } from "@/lib/gateway-launch";
 import { readJsonFileSync } from "@/lib/json";
 import { OPENCLAW_CONFIG_PATH } from "@/lib/openclaw-paths";
 
@@ -145,12 +146,12 @@ async function getOpenclawVersion(): Promise<string | undefined> {
 
 export async function GET() {
 	const startedAt = Date.now();
+	const launchPath = buildGatewayHomeLaunchPath();
 	try {
 		const openclawVersion = await getOpenclawVersion();
 		const config = readJsonFileSync<any>(CONFIG_PATH);
 		const port = config.gateway?.port || 18789;
 		const token = config.gateway?.auth?.token || "";
-		const webUrl = `http://localhost:${port}/chat${token ? `?token=${encodeURIComponent(token)}` : ""}`;
 
 		const url = `http://localhost:${port}/api/health`;
 		const headers: Record<string, string> = {};
@@ -176,7 +177,7 @@ export async function GET() {
 				status: responseMs > DEGRADED_LATENCY_MS ? "degraded" : "healthy",
 				checkedAt,
 				responseMs,
-				webUrl,
+				launchPath,
 			});
 		}
 
@@ -191,7 +192,7 @@ export async function GET() {
 				status: resp.status === 404 ? "healthy" : "degraded",
 				checkedAt,
 				responseMs,
-				webUrl,
+				launchPath,
 			});
 		}
 
@@ -207,7 +208,7 @@ export async function GET() {
 				status: "healthy",
 				checkedAt,
 				responseMs,
-				webUrl,
+				launchPath,
 			});
 		}
 
@@ -260,7 +261,7 @@ export async function GET() {
 				status: "degraded",
 				checkedAt,
 				responseMs,
-				webUrl: `http://localhost:${port}/chat${token ? `?token=${encodeURIComponent(token)}` : ""}`,
+				launchPath,
 			});
 		}
 		const cli = await probeGatewayViaCli(token, 5000);
@@ -274,7 +275,7 @@ export async function GET() {
 				status: "healthy",
 				checkedAt,
 				responseMs,
-				webUrl: `http://localhost:${port}/chat${token ? `?token=${encodeURIComponent(token)}` : ""}`,
+				launchPath,
 			});
 		}
 		return NextResponse.json({

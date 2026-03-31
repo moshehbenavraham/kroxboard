@@ -1,6 +1,6 @@
 {
 	"name": "openclaw-bot-review",
-	"version": "1.0.7",
+	"version": "1.0.10",
 	"private": true,
 	"license": "MIT",
 	"scripts": {

@@ -4,7 +4,6 @@ import {
 	DashboardEnvError,
 	parseDashboardAuthEnv,
 } from "@/lib/security/dashboard-env";
-import { resolveOperatorIdentity } from "@/lib/security/operator-identity";
 import {
 	clearOperatorSessionCookie,
 	createOperatorSession,
@@ -12,11 +11,22 @@ import {
 	setOperatorSessionCookie,
 } from "@/lib/security/operator-session";
 import {
+	createInvalidRequestResponse,
+	validateOperatorCodeInput,
+} from "@/lib/security/request-boundary";
+import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
+import {
 	createOperatorAuthDeniedResponse,
 	createOperatorConfigErrorResponse,
 } from "@/lib/security/sensitive-route";
 
 export async function POST(request: Request) {
+	const access = requireSensitiveMutationAccess(request, {
+		auth: "identity",
+		allowedMethods: ["POST"],
+	});
+	if (!access.ok) return access.response;
+
 	let env: DashboardAuthEnv;
 	try {
 		env = parseDashboardAuthEnv();
@@ -26,17 +36,6 @@ export async function POST(request: Request) {
 				? "Operator auth is not configured"
 				: "Operator auth is unavailable";
 		return createOperatorConfigErrorResponse(message);
-	}
-
-	const identityResolution = resolveOperatorIdentity(request, env);
-	if (!identityResolution.ok) {
-		return createOperatorAuthDeniedResponse(
-			request,
-			identityResolution.state,
-			403,
-			env.operatorCodeRequired,
-			{ message: identityResolution.message },
-		);
 	}
 
 	if (!env.operatorCodeRequired) {
@@ -50,23 +49,24 @@ export async function POST(request: Request) {
 	}
 
 	const body = await request.json().catch(() => null);
-	const code = typeof body?.code === "string" ? body.code : "";
-	if (!code.trim()) {
-		return NextResponse.json(
-			{ ok: false, error: "Operator code is required" },
-			{ status: 400 },
-		);
-	}
+	const input = validateOperatorCodeInput(body);
+	if (!input.ok) return createInvalidRequestResponse(input.error);
 
-	if (!isOperatorCodeValid(code, env)) {
+	if (!isOperatorCodeValid(input.value.code, env)) {
 		return NextResponse.json(
 			{ ok: false, error: "Invalid operator code" },
 			{ status: 401 },
 		);
 	}
 
+	if (!access.identity) {
+		return createOperatorConfigErrorResponse(
+			"Operator identity is unavailable",
+		);
+	}
+
 	const { token, expiresAt, session } = createOperatorSession(
-		identityResolution.identity,
+		access.identity,
 		env,
 	);
 	const response = NextResponse.json({ ok: true, session });
@@ -75,6 +75,12 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+	const access = requireSensitiveMutationAccess(request, {
+		auth: "none",
+		allowedMethods: ["DELETE"],
+	});
+	if (!access.ok) return access.response;
+
 	const response = NextResponse.json({ ok: true, cleared: true });
 	clearOperatorSessionCookie(response, request);
 	return response;
