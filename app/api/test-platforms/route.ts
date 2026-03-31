@@ -5,9 +5,9 @@ import { pathToFileURL } from "node:url";
 import { NextResponse } from "next/server";
 import {
 	isValidOpenclawAgentId,
-	OPENCLAW_CONFIG_PATH,
 	OPENCLAW_HOME,
 	resolveOpenclawAgentSessionsFile,
+	resolveOpenclawConfigFileOrThrow,
 } from "@/lib/openclaw-paths";
 import { shouldHidePlatformChannel } from "@/lib/platforms";
 import {
@@ -18,7 +18,6 @@ import { resolveOutboundDiagnosticAccess } from "@/lib/security/feature-flags";
 import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
 import type { DiagnosticMetadata } from "@/lib/security/types";
 
-const CONFIG_PATH = OPENCLAW_CONFIG_PATH;
 const QQBOT_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";
 const QQBOT_API_BASE = "https://api.sgroup.qq.com";
 const YUANBAO_PLUGIN_DIST_DIR = path.join(
@@ -1475,7 +1474,7 @@ export async function POST(request: Request) {
 	platformDiagnosticsInFlight.add(rateLimit.key);
 
 	try {
-		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
+		const raw = fs.readFileSync(resolveOpenclawConfigFileOrThrow(), "utf-8");
 		const config = JSON.parse(raw);
 
 		const bindings = config.bindings || [];

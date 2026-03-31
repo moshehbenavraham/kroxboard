@@ -5,8 +5,8 @@ import { parseJsonText } from "@/lib/json";
 import {
 	isValidOpenclawAgentId,
 	OPENCLAW_AGENTS_DIR,
-	OPENCLAW_CONFIG_PATH,
-	resolveOpenclawCronStorePath,
+	resolveConfiguredOpenclawCronStorePath,
+	resolveOpenclawConfigFileOrThrow,
 } from "@/lib/openclaw-paths";
 
 export const dynamic = "force-dynamic";
@@ -202,7 +202,7 @@ function truncateSummary(raw: string, maxLen = 120): string {
 async function loadCronJobs(config: any): Promise<CronStoreJob[]> {
 	const rawStorePath =
 		typeof config?.cron?.store === "string" ? config.cron.store : "";
-	const storePath = resolveOpenclawCronStorePath(rawStorePath);
+	const storePath = resolveConfiguredOpenclawCronStorePath(rawStorePath);
 	if (!storePath) return [];
 	if (!existsSync(storePath)) return [];
 	try {
@@ -968,7 +968,7 @@ async function parseCronJobs(
 }
 
 export async function GET() {
-	const configPath = OPENCLAW_CONFIG_PATH;
+	const configPath = resolveOpenclawConfigFileOrThrow();
 	const agentsDir = OPENCLAW_AGENTS_DIR;
 
 	const agents: AgentActivity[] = [];

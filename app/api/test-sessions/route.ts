@@ -1,7 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import {
+	OPENCLAW_HOME,
+	resolveOpenclawConfigFileOrThrow,
+} from "@/lib/openclaw-paths";
 import {
 	applyDiagnosticRateLimitHeaders,
 	enforceDiagnosticRateLimit,
@@ -13,8 +16,6 @@ import {
 	shouldFallbackToCli,
 	testSessionViaCli,
 } from "@/lib/session-test-fallback";
-
-const CONFIG_PATH = OPENCLAW_CONFIG_PATH;
 
 function hasEmbeddedHttpError(reply: string): boolean {
 	// Some providers return error text in content while gateway still returns HTTP 200.
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
 	if (!rateLimit.ok) return rateLimit.response;
 
 	try {
-		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
+		const raw = fs.readFileSync(resolveOpenclawConfigFileOrThrow(), "utf-8");
 		const config = JSON.parse(raw);
 		const gatewayPort = config.gateway?.port || 18789;
 		const gatewayToken = config.gateway?.auth?.token || "";

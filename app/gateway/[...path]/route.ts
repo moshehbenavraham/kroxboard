@@ -7,7 +7,7 @@ import {
 import { resolveGatewayLaunchSessionKey } from "@/lib/gateway-launch-server";
 import { readJsonFileSync } from "@/lib/json";
 import { logger } from "@/lib/logger";
-import { OPENCLAW_CONFIG_PATH } from "@/lib/openclaw-paths";
+import { resolveOpenclawConfigFileOrThrow } from "@/lib/openclaw-paths";
 import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
 import { requireSensitiveRouteAccess } from "@/lib/security/sensitive-route";
 
@@ -26,7 +26,7 @@ type GatewayRuntimeConfig = {
 };
 
 function readGatewayRuntimeConfig(): GatewayRuntimeConfig {
-	const config = readJsonFileSync<any>(OPENCLAW_CONFIG_PATH);
+	const config = readJsonFileSync<any>(resolveOpenclawConfigFileOrThrow());
 	const port =
 		typeof config?.gateway?.port === "number" ? config.gateway.port : 18789;
 	const token =

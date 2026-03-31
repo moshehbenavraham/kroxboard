@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const renameSpy = vi.fn();
+const ORIGINAL_ENV = { ...process.env };
 
 vi.mock("node:fs/promises", async () => {
 	const actual =
@@ -22,6 +23,8 @@ describe("alert config helper", () => {
 	let configPath = "";
 
 	beforeEach(() => {
+		vi.resetModules();
+		Object.assign(process.env, ORIGINAL_ENV);
 		tempOpenclawHome = fs.mkdtempSync(
 			path.join(os.tmpdir(), "kroxboard-alert-config-"),
 		);
@@ -31,6 +34,7 @@ describe("alert config helper", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		fs.rmSync(tempOpenclawHome, { recursive: true, force: true });
+		process.env = { ...ORIGINAL_ENV };
 	});
 
 	it("returns the default alert config when alerts.json is missing", async () => {
@@ -122,5 +126,38 @@ describe("alert config helper", () => {
 						entry.startsWith(".alerts.json.") && entry.endsWith(".tmp"),
 				),
 		).toEqual([]);
+	});
+
+	it("uses OPENCLAW_ALERTS_PATH when loading and writing alert config", async () => {
+		process.env.OPENCLAW_HOME = tempOpenclawHome;
+		process.env.OPENCLAW_ALERTS_PATH = "config/alerts.custom.json";
+		const overridePath = path.join(
+			tempOpenclawHome,
+			"config",
+			"alerts.custom.json",
+		);
+		const { loadAlertConfig, writeAlertConfig } = await import(
+			"@/lib/alert-config"
+		);
+
+		const initial = await loadAlertConfig();
+		expect(initial).toMatchObject({
+			enabled: false,
+			receiveAgent: "main",
+		});
+
+		await writeAlertConfig({
+			enabled: true,
+			receiveAgent: "helper",
+			checkInterval: 5,
+			rules: [],
+			lastAlerts: {},
+		});
+
+		expect(JSON.parse(fs.readFileSync(overridePath, "utf8"))).toMatchObject({
+			enabled: true,
+			receiveAgent: "helper",
+			checkInterval: 5,
+		});
 	});
 });

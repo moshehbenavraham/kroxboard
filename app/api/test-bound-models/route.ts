@@ -6,7 +6,10 @@ import {
 	parseModelRef,
 	probeModel,
 } from "@/lib/model-probe";
-import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import {
+	OPENCLAW_HOME,
+	resolveOpenclawConfigFileOrThrow,
+} from "@/lib/openclaw-paths";
 import {
 	applyDiagnosticRateLimitHeaders,
 	enforceDiagnosticRateLimit,
@@ -14,7 +17,6 @@ import {
 import { requireFeatureFlag } from "@/lib/security/feature-flags";
 import { requireSensitiveMutationAccess } from "@/lib/security/sensitive-mutation";
 
-const CONFIG_PATH = OPENCLAW_CONFIG_PATH;
 const PROBE_TIMEOUT_MS = DEFAULT_MODEL_PROBE_TIMEOUT_MS;
 
 type AgentConfig = {
@@ -52,7 +54,7 @@ export async function POST(request: Request) {
 	if (!rateLimit.ok) return rateLimit.response;
 
 	try {
-		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
+		const raw = fs.readFileSync(resolveOpenclawConfigFileOrThrow(), "utf-8");
 		const config = JSON.parse(raw);
 		const defaults = config?.agents?.defaults || {};
 		const defaultModel =

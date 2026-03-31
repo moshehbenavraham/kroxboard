@@ -6,6 +6,9 @@ import {
 	getOpenclawPackageCandidates,
 	isPathWithinBoundary,
 	isValidOpenclawAgentId,
+	resolveConfiguredOpenclawAlertsConfigFile,
+	resolveConfiguredOpenclawConfigFile,
+	resolveConfiguredOpenclawCronStorePath,
 	resolveConfiguredOpenclawHome,
 	resolveOpenclawAgentConfigDir,
 	resolveOpenclawAgentModelsFile,
@@ -114,6 +117,38 @@ describe("openclaw path boundaries", () => {
 		expect(resolveOpenclawAgentModelsFile("../main", openclawHome)).toBeNull();
 	});
 
+	it("resolves configured config and alerts overrides inside the runtime boundary", () => {
+		const openclawHome = "/tmp/openclaw-home";
+		expect(
+			resolveConfiguredOpenclawConfigFile(
+				openclawHome,
+				"config/openclaw.custom.json",
+			),
+		).toBe(path.resolve(openclawHome, "config", "openclaw.custom.json"));
+		expect(
+			resolveConfiguredOpenclawAlertsConfigFile(
+				openclawHome,
+				"config/alerts.custom.json",
+			),
+		).toBe(path.resolve(openclawHome, "config", "alerts.custom.json"));
+	});
+
+	it("rejects configured config and alerts overrides that escape the runtime boundary", () => {
+		const openclawHome = "/tmp/openclaw-home";
+		expect(
+			resolveConfiguredOpenclawConfigFile(
+				openclawHome,
+				"../secrets/openclaw.json",
+			),
+		).toBeNull();
+		expect(
+			resolveConfiguredOpenclawAlertsConfigFile(
+				openclawHome,
+				"/tmp/alerts.json",
+			),
+		).toBeNull();
+	});
+
 	it("rejects invalid root assumptions before building runtime file paths", () => {
 		expect(resolveConfiguredOpenclawHome("relative/openclaw-home")).toBeNull();
 		expect(resolveOpenclawConfigFile("relative/openclaw-home")).toBeNull();
@@ -162,6 +197,26 @@ describe("openclaw path boundaries", () => {
 		expect(() =>
 			resolveOpenclawCronStorePathOrThrow("../secrets/jobs.json", openclawHome),
 		).toThrowError("OpenClaw cron store path is invalid");
+	});
+
+	it("prefers the configured cron-store override when provided", () => {
+		const openclawHome = "/tmp/openclaw-home";
+		expect(
+			resolveConfiguredOpenclawCronStorePath(
+				"cron-store/jobs.json",
+				openclawHome,
+				"/home/tester",
+				"cron/jobs.json",
+			),
+		).toBe(path.resolve(openclawHome, "cron", "jobs.json"));
+		expect(
+			resolveConfiguredOpenclawCronStorePath(
+				"cron-store/jobs.json",
+				openclawHome,
+				"/home/tester",
+				"../secrets/jobs.json",
+			),
+		).toBeNull();
 	});
 
 	it("uses the legacy cron-store default when only the legacy file exists", () => {

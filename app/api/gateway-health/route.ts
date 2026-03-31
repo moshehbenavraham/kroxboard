@@ -5,7 +5,7 @@ import {
 	getOpenclawVersion as fetchOpenclawVersion,
 	probeOpenclawGatewayStatus,
 } from "@/lib/openclaw-cli";
-import { resolveOpenclawConfigFile } from "@/lib/openclaw-paths";
+import { resolveOpenclawConfigFileOrThrow } from "@/lib/openclaw-paths";
 
 const DEFAULT_GATEWAY_PORT = 18789;
 const DEGRADED_LATENCY_MS = 1500;
@@ -20,12 +20,7 @@ let cachedOpenclawVersion: { value: string | null; expiresAt: number } | null =
 	null;
 
 function loadGatewayRuntimeConfig(): GatewayRuntimeConfig {
-	const configPath = resolveOpenclawConfigFile();
-	if (!configPath) {
-		throw new Error("OpenClaw runtime config path is invalid");
-	}
-
-	const config = readJsonFileSync<any>(configPath);
+	const config = readJsonFileSync<any>(resolveOpenclawConfigFileOrThrow());
 	return {
 		port:
 			typeof config.gateway?.port === "number"

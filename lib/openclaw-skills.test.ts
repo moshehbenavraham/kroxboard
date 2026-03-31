@@ -10,7 +10,7 @@ vi.mock("@/lib/openclaw-paths", () => ({
 	get OPENCLAW_HOME() {
 		return tempDir;
 	},
-	get OPENCLAW_CONFIG_PATH() {
+	resolveConfiguredOpenclawConfigFile() {
 		return path.join(tempDir, "openclaw.json");
 	},
 	getOpenclawPackageCandidates: () => [tempPkgDir],

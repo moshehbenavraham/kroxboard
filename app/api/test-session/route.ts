@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { NextResponse } from "next/server";
-import { OPENCLAW_CONFIG_PATH } from "@/lib/openclaw-paths";
+import { resolveOpenclawConfigFileOrThrow } from "@/lib/openclaw-paths";
 import {
 	applyDiagnosticRateLimitHeaders,
 	enforceDiagnosticRateLimit,
@@ -16,8 +16,6 @@ import {
 	shouldFallbackToCli,
 	testSessionViaCli,
 } from "@/lib/session-test-fallback";
-
-const CONFIG_PATH = OPENCLAW_CONFIG_PATH;
 
 export async function POST(req: Request) {
 	const access = requireSensitiveMutationAccess(req, {
@@ -38,7 +36,7 @@ export async function POST(req: Request) {
 		if (!rateLimit.ok) return rateLimit.response;
 
 		// Read gateway config
-		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
+		const raw = fs.readFileSync(resolveOpenclawConfigFileOrThrow(), "utf-8");
 		const config = JSON.parse(raw);
 		const gatewayPort = config.gateway?.port || 18789;
 		const gatewayToken = config.gateway?.auth?.token || "";

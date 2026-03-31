@@ -3,9 +3,9 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import {
 	isValidOpenclawAgentId,
-	OPENCLAW_CONFIG_PATH,
 	OPENCLAW_HOME,
 	resolveOpenclawAgentSessionsFile,
+	resolveOpenclawConfigFileOrThrow,
 } from "@/lib/openclaw-paths";
 import { shouldHidePlatformChannel } from "@/lib/platforms";
 import {
@@ -19,8 +19,6 @@ import {
 	shouldFallbackToCli,
 	testSessionViaCli,
 } from "@/lib/session-test-fallback";
-
-const CONFIG_PATH = OPENCLAW_CONFIG_PATH;
 
 interface DmSessionResult {
 	agentId: string;
@@ -162,7 +160,7 @@ export async function POST(request: Request) {
 	if (!rateLimit.ok) return rateLimit.response;
 
 	try {
-		const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
+		const raw = fs.readFileSync(resolveOpenclawConfigFileOrThrow(), "utf-8");
 		const config = JSON.parse(raw);
 		const gatewayPort = config.gateway?.port || 18789;
 		const gatewayToken = config.gateway?.auth?.token || "";

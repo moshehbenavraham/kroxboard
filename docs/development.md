@@ -42,6 +42,7 @@
 
 The dashboard uses server-only environment variables. See `.env.example` for the full inventory. Key categories:
 
+- **Runtime paths** -- `OPENCLAW_HOME` plus optional `OPENCLAW_*_PATH` overrides for config, alerts, and cron-store files
 - **Cloudflare Access** -- `DASHBOARD_CF_ACCESS_*` keys for non-local auth boundary
 - **Operator elevation** -- `DASHBOARD_OPERATOR_*` keys for in-app sensitive route protection
 - **Feature flags** -- `ENABLE_*` keys that gate mutating/side-effect routes (all default to `false`)

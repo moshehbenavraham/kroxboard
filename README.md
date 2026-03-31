@@ -86,6 +86,18 @@ By default the dashboard reads config from `~/.openclaw/openclaw.json`. Set `OPE
 OPENCLAW_HOME=/opt/openclaw npm run dev
 ```
 
+Optional path overrides can also live in your root `.env` when you need a
+non-default file layout inside that runtime tree:
+
+```bash
+OPENCLAW_CONFIG_PATH=config/openclaw.json
+OPENCLAW_ALERTS_PATH=config/alerts.json
+OPENCLAW_CRON_STORE_PATH=cron-store/jobs.json
+```
+
+Relative override values resolve from `OPENCLAW_HOME` and must stay within the
+approved OpenClaw runtime directories.
+
 ### Operator Auth
 
 Sensitive dashboard actions use a two-layer operator boundary:

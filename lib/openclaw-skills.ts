@@ -2,8 +2,8 @@ import path from "node:path";
 import { parseJsonText } from "@/lib/json";
 import {
 	getOpenclawPackageCandidates,
-	OPENCLAW_CONFIG_PATH,
 	OPENCLAW_HOME,
+	resolveConfiguredOpenclawConfigFile,
 } from "@/lib/openclaw-paths";
 import {
 	listBoundedDirectory,
@@ -316,7 +316,12 @@ function buildAgentsMap(config: unknown): Record<string, SkillAgentInfo> {
 }
 
 async function readAgentsFromConfig(): Promise<Record<string, SkillAgentInfo>> {
-	const rawConfig = await readBoundedTextFile(OPENCLAW_CONFIG_PATH, {
+	const configPath = resolveConfiguredOpenclawConfigFile();
+	if (!configPath) {
+		return {};
+	}
+
+	const rawConfig = await readBoundedTextFile(configPath, {
 		maxBytes: MAX_CONFIG_FILE_BYTES,
 	});
 	if (!rawConfig) {

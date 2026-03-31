@@ -58,6 +58,12 @@ function expandHomePath(value: string, userHome = home): string {
 	return value;
 }
 
+function hasConfiguredPathOverride(
+	value: string | null | undefined,
+): value is string {
+	return typeof value === "string" && value.trim().length > 0;
+}
+
 export function resolveConfiguredOpenclawHome(
 	openclawHome = process.env.OPENCLAW_HOME,
 	userHome = home,
@@ -174,10 +180,40 @@ export function resolveOpenclawConfigFile(
 	return resolveOpenclawRuntimePath(openclawHome, "openclaw.json");
 }
 
+export function resolveConfiguredOpenclawConfigFile(
+	openclawHome = process.env.OPENCLAW_HOME,
+	rawConfigPath = process.env.OPENCLAW_CONFIG_PATH,
+	userHome = home,
+): string | null {
+	const normalizedHome = resolveConfiguredOpenclawHome(openclawHome, userHome);
+	if (!normalizedHome) return null;
+
+	if (hasConfiguredPathOverride(rawConfigPath)) {
+		return resolveOpenclawRuntimeOverridePath(rawConfigPath, normalizedHome);
+	}
+
+	return resolveOpenclawConfigFile(normalizedHome);
+}
+
 export function resolveOpenclawAlertsConfigFile(
 	openclawHome = OPENCLAW_HOME,
 ): string | null {
 	return resolveOpenclawRuntimePath(openclawHome, "alerts.json");
+}
+
+export function resolveConfiguredOpenclawAlertsConfigFile(
+	openclawHome = process.env.OPENCLAW_HOME,
+	rawAlertsPath = process.env.OPENCLAW_ALERTS_PATH,
+	userHome = home,
+): string | null {
+	const normalizedHome = resolveConfiguredOpenclawHome(openclawHome, userHome);
+	if (!normalizedHome) return null;
+
+	if (hasConfiguredPathOverride(rawAlertsPath)) {
+		return resolveOpenclawRuntimeOverridePath(rawAlertsPath, normalizedHome);
+	}
+
+	return resolveOpenclawAlertsConfigFile(normalizedHome);
 }
 
 export function resolveOpenclawAgentConfigDir(
@@ -250,6 +286,24 @@ export function resolveOpenclawCronStorePath(
 		: null;
 }
 
+export function resolveConfiguredOpenclawCronStorePath(
+	rawStorePath: string | null | undefined,
+	openclawHome = process.env.OPENCLAW_HOME,
+	userHome = home,
+	rawConfiguredStorePath = process.env.OPENCLAW_CRON_STORE_PATH,
+): string | null {
+	const normalizedHome = resolveConfiguredOpenclawHome(openclawHome, userHome);
+	if (!normalizedHome) return null;
+
+	return resolveOpenclawCronStorePath(
+		hasConfiguredPathOverride(rawConfiguredStorePath)
+			? rawConfiguredStorePath
+			: rawStorePath,
+		normalizedHome,
+		userHome,
+	);
+}
+
 function getOpenclawPathErrorMessage(code: OpenclawPathErrorCode): string {
 	switch (code) {
 		case "openclaw_home_invalid":
@@ -304,9 +358,15 @@ export function resolveOpenclawAgentsDirOrThrow(
 }
 
 export function resolveOpenclawConfigFileOrThrow(
-	openclawHome = OPENCLAW_HOME,
+	openclawHome = process.env.OPENCLAW_HOME,
+	rawConfigPath = process.env.OPENCLAW_CONFIG_PATH,
+	userHome = home,
 ): string {
-	const configPath = resolveOpenclawConfigFile(openclawHome);
+	const configPath = resolveConfiguredOpenclawConfigFile(
+		openclawHome,
+		rawConfigPath,
+		userHome,
+	);
 	if (!configPath) {
 		throwOpenclawPathError("openclaw_config_path_invalid");
 	}
@@ -314,9 +374,15 @@ export function resolveOpenclawConfigFileOrThrow(
 }
 
 export function resolveOpenclawAlertsConfigFileOrThrow(
-	openclawHome = OPENCLAW_HOME,
+	openclawHome = process.env.OPENCLAW_HOME,
+	rawAlertsPath = process.env.OPENCLAW_ALERTS_PATH,
+	userHome = home,
 ): string {
-	const configPath = resolveOpenclawAlertsConfigFile(openclawHome);
+	const configPath = resolveConfiguredOpenclawAlertsConfigFile(
+		openclawHome,
+		rawAlertsPath,
+		userHome,
+	);
 	if (!configPath) {
 		throwOpenclawPathError("openclaw_alerts_path_invalid");
 	}
@@ -325,13 +391,15 @@ export function resolveOpenclawAlertsConfigFileOrThrow(
 
 export function resolveOpenclawCronStorePathOrThrow(
 	rawStorePath: string | null | undefined,
-	openclawHome = OPENCLAW_HOME,
+	openclawHome = process.env.OPENCLAW_HOME,
 	userHome = home,
+	rawConfiguredStorePath = process.env.OPENCLAW_CRON_STORE_PATH,
 ): string {
-	const storePath = resolveOpenclawCronStorePath(
+	const storePath = resolveConfiguredOpenclawCronStorePath(
 		rawStorePath,
 		openclawHome,
 		userHome,
+		rawConfiguredStorePath,
 	);
 	if (!storePath) {
 		throwOpenclawPathError("openclaw_cron_store_path_invalid");

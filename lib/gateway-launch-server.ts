@@ -1,24 +1,21 @@
 import fs from "node:fs";
-import path from "node:path";
 import {
 	type GatewayLaunchTarget,
 	getLatestDirectSessionKeyFromSessions,
 	type SessionIndexEntry,
 } from "@/lib/gateway-launch";
 import { readJsonFileSync } from "@/lib/json";
-import { OPENCLAW_CONFIG_PATH, OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import {
+	resolveOpenclawAgentSessionsFile,
+	resolveOpenclawConfigFileOrThrow,
+} from "@/lib/openclaw-paths";
 
 function readAgentSessions(
 	agentId: string,
 ): Record<string, SessionIndexEntry> | null {
 	try {
-		const sessionsPath = path.join(
-			OPENCLAW_HOME,
-			"agents",
-			agentId,
-			"sessions",
-			"sessions.json",
-		);
+		const sessionsPath = resolveOpenclawAgentSessionsFile(agentId);
+		if (!sessionsPath) return null;
 		return JSON.parse(fs.readFileSync(sessionsPath, "utf-8")) as Record<
 			string,
 			SessionIndexEntry
@@ -31,7 +28,7 @@ function readAgentSessions(
 function readDiscordFallbackUserId(agentId: string): string | null {
 	if (agentId !== "main") return null;
 	try {
-		const config = readJsonFileSync<any>(OPENCLAW_CONFIG_PATH);
+		const config = readJsonFileSync<any>(resolveOpenclawConfigFileOrThrow());
 		const candidate = config?.channels?.discord?.dm?.allowFrom?.[0];
 		return typeof candidate === "string" && candidate.trim().length > 0
 			? candidate.trim()

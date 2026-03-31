@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mockExecFile = vi.fn();
 const mockExec = vi.fn();
 const mockReadJsonFileSync = vi.fn();
+const ORIGINAL_ENV = { ...process.env };
 
 vi.mock("node:child_process", () => ({
 	execFile: mockExecFile,
@@ -27,6 +28,7 @@ vi.mock("@/lib/json", () => ({
 describe("GET /api/gateway-health", () => {
 	beforeEach(() => {
 		vi.resetModules();
+		Object.assign(process.env, ORIGINAL_ENV);
 		mockExecFile.mockReset();
 		mockExec.mockReset();
 		mockReadJsonFileSync.mockReset();
@@ -50,6 +52,7 @@ describe("GET /api/gateway-health", () => {
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		process.env = { ...ORIGINAL_ENV };
 	});
 
 	it("returns a same-origin launch path for healthy gateway responses", async () => {
@@ -74,6 +77,29 @@ describe("GET /api/gateway-health", () => {
 		expect(body.launchPath).toBe("/gateway/chat");
 		expect(body.data).toBeUndefined();
 		expect(body.webUrl).toBeUndefined();
+	});
+
+	it("uses OPENCLAW_CONFIG_PATH when resolving the runtime config location", async () => {
+		process.env.OPENCLAW_HOME = "/tmp/openclaw-home";
+		process.env.OPENCLAW_CONFIG_PATH = "config/runtime.json";
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = typeof input === "string" ? input : input.toString();
+			if (url.endsWith("/api/health")) {
+				return new Response(JSON.stringify({ ok: true }), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				});
+			}
+			throw new Error(`Unexpected fetch: ${url}`);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const { GET } = await import("./route");
+		const response = await GET();
+		expect(response.status).toBe(200);
+		expect(mockReadJsonFileSync).toHaveBeenCalledWith(
+			"/tmp/openclaw-home/config/runtime.json",
+		);
 	});
 
 	it("omits launch metadata when the gateway is down", async () => {
