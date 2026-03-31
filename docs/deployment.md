@@ -26,6 +26,67 @@ npm run build
 
 Next.js produces a standalone output in `.next/standalone/` suitable for Docker or direct Node.js execution.
 
+## Systemd (User Service, Non-Docker)
+
+Use this path when running directly on a Linux host without Docker. The
+tracked unit file lives at `deploy/systemd/openclaw-dashboard.service`.
+The committed unit defaults to loopback port `51203`.
+
+### Install/Update Unit
+
+```bash
+install -D -m 0644 deploy/systemd/openclaw-dashboard.service \
+  ~/.config/systemd/user/openclaw-dashboard.service
+systemctl --user daemon-reload
+systemctl --user enable --now openclaw-dashboard.service
+```
+
+### Restart After Deploy
+
+```bash
+npm run build
+systemctl --user restart openclaw-dashboard.service
+```
+
+### Verify
+
+```bash
+curl http://127.0.0.1:51203/api/health
+systemctl --user status openclaw-dashboard.service --no-pager
+```
+
+## Cloudflare Tunnel (User Service)
+
+For non-local access, keep the app loopback-only and publish it through
+Cloudflare Tunnel + Access.
+
+### One-Time Tunnel Bootstrap
+
+```bash
+cloudflared tunnel create openclaw-dashboard
+cloudflared tunnel route dns --overwrite-dns <tunnel-uuid> board.aiwithapex.com
+```
+
+Create `~/.cloudflared/openclaw-dashboard.yml` from
+`deploy/cloudflared/openclaw-dashboard.yml` by replacing `<tunnel-uuid>` with
+the tunnel ID.
+
+### Install/Run Tunnel Service
+
+```bash
+install -D -m 0644 deploy/systemd/openclaw-dashboard-tunnel.service \
+  ~/.config/systemd/user/openclaw-dashboard-tunnel.service
+systemctl --user daemon-reload
+systemctl --user enable --now openclaw-dashboard-tunnel.service
+```
+
+### Verify
+
+```bash
+systemctl --user status openclaw-dashboard-tunnel.service --no-pager
+curl -I https://board.aiwithapex.com
+```
+
 ## Docker
 
 ### Build Image
@@ -70,7 +131,7 @@ The standard non-local deployment uses `board.aiwithapex.com` behind Cloudflare 
 ### Architecture
 
 ```text
-Operator --> Cloudflare Access (OTP login) --> Cloudflare Tunnel --> 127.0.0.1:3000
+Operator --> Cloudflare Access (OTP login) --> Cloudflare Tunnel --> 127.0.0.1:51203
 ```
 
 ### Setup

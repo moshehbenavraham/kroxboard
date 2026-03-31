@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+## View .env for additional details
+
 ## Project Structure & Module Organization
 `app/` contains the Next.js 16 App Router UI, layouts, and API handlers. Keep route files in `app/api/*/route.ts` thin and move reusable logic into `lib/`. Shared security, OpenClaw bridge, logging, and client helpers live in `lib/`, with sensitive guards under `lib/security/` and the pixel renderer under `lib/pixel-office/`. Co-located unit and component tests use `*.test.ts` or `*.test.tsx` beside the source. Playwright end-to-end tests live in `tests/`. Reference docs and specs are under `docs/` and `.spec_system/`.
 

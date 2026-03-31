@@ -1,0 +1,7 @@
+tunnel: <tunnel-uuid>
+credentials-file: /home/krox/.cloudflared/<tunnel-uuid>.json
+
+ingress:
+  - hostname: board.aiwithapex.com
+    service: http://127.0.0.1:51203
+  - service: http_status:404

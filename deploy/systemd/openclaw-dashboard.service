@@ -1,0 +1,19 @@
+[Unit]
+Description=OpenClaw Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/krox/kroxboard
+EnvironmentFile=/home/krox/kroxboard/.env
+Environment=NODE_ENV=production
+Environment=PORT=51203
+Environment=HOSTNAME=127.0.0.1
+Environment=NEXT_TELEMETRY_DISABLED=1
+ExecStart=/usr/bin/node /home/krox/kroxboard/.next/standalone/server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

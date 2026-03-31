@@ -1,0 +1,13 @@
+[Unit]
+Description=OpenClaw Dashboard Cloudflare Tunnel
+After=network-online.target openclaw-dashboard.service
+Wants=network-online.target openclaw-dashboard.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared --config /home/krox/.cloudflared/openclaw-dashboard.yml tunnel run openclaw-dashboard
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
