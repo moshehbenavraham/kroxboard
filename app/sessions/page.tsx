@@ -5,6 +5,11 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { OperatorActionBanner } from "@/app/components/operator-action-banner";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
+import {
+	clearBoundedStorageKey,
+	readBoundedStorageRecord,
+	writeBoundedStorageRecord,
+} from "@/lib/client-persistence";
 import { buildGatewaySessionLaunchPath } from "@/lib/gateway-launch";
 import { useI18n } from "@/lib/i18n";
 import {
@@ -75,6 +80,12 @@ const TYPE_EMOJI_COLOR: Record<string, { emoji: string; color: string }> = {
 		emoji: "?",
 		color: "bg-gray-500/20 text-gray-300 border-gray-500/30",
 	},
+};
+
+const SESSION_DIAGNOSTIC_STORAGE = {
+	ttlMs: 24 * 60 * 60 * 1000,
+	maxBytes: 24 * 1024,
+	maxEntries: 256,
 };
 
 function formatTime(ts: number): string {
@@ -254,24 +265,27 @@ function SessionList({ agentId }: { agentId: string }) {
 			.finally(() => setLoading(false));
 
 		// Restore saved test results from localStorage.
-		const savedTestResults = localStorage.getItem("sessionTestResults");
-		if (savedTestResults) {
-			try {
-				setTestResults(JSON.parse(savedTestResults));
-			} catch (e) {
-				console.error(
-					"Failed to parse sessionTestResults from localStorage",
-					e,
-				);
-			}
-		}
+		setTestResults(
+			readBoundedStorageRecord<{
+				status: string;
+				elapsed?: number;
+				reply?: string;
+				error?: string;
+			}>("sessionTestResults", SESSION_DIAGNOSTIC_STORAGE) || {},
+		);
 	}, [agentId]);
 
 	// Persist test results to localStorage.
 	useEffect(() => {
 		if (Object.keys(testResults).length > 0) {
-			localStorage.setItem("sessionTestResults", JSON.stringify(testResults));
+			writeBoundedStorageRecord(
+				"sessionTestResults",
+				testResults,
+				SESSION_DIAGNOSTIC_STORAGE,
+			);
+			return;
 		}
+		clearBoundedStorageKey("sessionTestResults");
 	}, [testResults]);
 
 	if (loading) {

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { createClientPoller } from "@/lib/client-polling";
 import { useI18n } from "@/lib/i18n";
 
 interface HealthResult {
@@ -27,18 +28,29 @@ export function GatewayStatus({
 	const [showError, setShowError] = useState(false);
 	const [showVersionTip, setShowVersionTip] = useState(false);
 
-	const check = useCallback(() => {
-		fetch("/api/gateway-health")
-			.then((r) => r.json())
-			.then((d) => setHealth(d))
-			.catch(() => setHealth({ ok: false, error: t("gateway.fetchError") }));
-	}, [t]);
-
 	useEffect(() => {
-		check();
-		const timer = setInterval(check, 10000);
-		return () => clearInterval(timer);
-	}, [check]);
+		const poller = createClientPoller<HealthResult>({
+			intervalMs: 10_000,
+			immediate: true,
+			sharedKey: "gateway-health",
+			reuseResultMs: 5_000,
+			request: async (signal) => {
+				const response = await fetch("/api/gateway-health", { signal });
+				return response.json();
+			},
+			onSuccess: (result) => {
+				setHealth(result);
+			},
+			onError: () => {
+				setHealth({ ok: false, error: t("gateway.fetchError") });
+			},
+		});
+
+		poller.start();
+		return () => {
+			poller.stop();
+		};
+	}, [t]);
 
 	const gatewayTitle = health?.openclawVersion
 		? `OpenClaw ${health.openclawVersion}`

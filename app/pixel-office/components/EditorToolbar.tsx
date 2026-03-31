@@ -174,7 +174,7 @@ interface EditorToolbarProps {
 	onWallColorChange: (color: FloorColor) => void;
 	onSelectedFurnitureColorChange: (color: FloorColor | null) => void;
 	onFurnitureTypeChange: (type: string) => void;
-	onDeleteFurniture: () => void;
+	onRequestDeleteFurniture: () => void;
 }
 
 export function EditorToolbar({
@@ -191,7 +191,7 @@ export function EditorToolbar({
 	onWallColorChange,
 	onSelectedFurnitureColorChange,
 	onFurnitureTypeChange,
-	onDeleteFurniture,
+	onRequestDeleteFurniture,
 }: EditorToolbarProps) {
 	const [activeCategory, setActiveCategory] =
 		useState<FurnitureCategory>("desks");
@@ -302,10 +302,10 @@ export function EditorToolbar({
 							border: "2px solid #ff5050",
 							color: "#ff9090",
 						}}
-						onClick={onDeleteFurniture}
-						title="Delete selected furniture (Delete key)"
+						onClick={onRequestDeleteFurniture}
+						title="Delete selected furniture (confirmation required)"
 					>
-						🗑 Delete
+						Delete
 					</button>
 				</div>
 			)}

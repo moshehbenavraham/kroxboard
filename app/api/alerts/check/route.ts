@@ -178,21 +178,13 @@ async function sendAlertViaFeishu(
 	message: string,
 	diagnostic: DiagnosticMetadata,
 ): Promise<AlertNotificationResult> {
-	console.log(
-		`[ALERT] sendAlertViaFeishu called with agentId: ${agentId}, message: ${message}`,
-	);
-
 	const openclawConfig = getOpenclawConfig();
 	const feishuConfig = openclawConfig.channels?.feishu || {};
-	const feishuAccounts = feishuConfig.accounts || {};
 	const bindings = openclawConfig.bindings || [];
-
-	console.log(`[ALERT] Feishu accounts found:`, Object.keys(feishuAccounts));
 
 	// Resolve the Feishu account config for this agent.
 	const accountInfo = getFeishuAccountForAgent(agentId, feishuConfig, bindings);
 	if (!accountInfo) {
-		console.log(`[ALERT] No Feishu account found for agent ${agentId}`);
 		return {
 			agentId,
 			mode: diagnostic.mode,
@@ -202,15 +194,9 @@ async function sendAlertViaFeishu(
 		};
 	}
 
-	console.log(
-		`[ALERT] Using account: ${accountInfo.accountId}, appId: ${accountInfo.appId}`,
-	);
-
 	// Look up the user's open_id from the agent's DM session.
 	const testUserId = getFeishuDmUser(agentId);
-	console.log(`[ALERT] Feishu DM user found: ${testUserId}`);
 	if (!testUserId) {
-		console.log(`[ALERT] No Feishu DM user found for agent ${agentId}`);
 		return {
 			agentId,
 			mode: diagnostic.mode,
@@ -224,7 +210,6 @@ async function sendAlertViaFeishu(
 		feishuConfig.domain === "lark"
 			? "https://open.larksuite.com"
 			: "https://open.feishu.cn";
-	console.log(`[ALERT] Using baseUrl: ${baseUrl}`);
 
 	try {
 		// Fetch tenant_access_token.
@@ -311,7 +296,6 @@ async function sendAlertViaFeishu(
 
 			const msgData2 = await msgResp2.json();
 			if (msgData2.code === 0) {
-				console.log(`[ALERT] Sent to ${agentId}: ${message}`);
 				return {
 					agentId,
 					mode: diagnostic.mode,
@@ -330,7 +314,6 @@ async function sendAlertViaFeishu(
 		}
 
 		if (msgData.code === 0) {
-			console.log(`[ALERT] Sent to ${agentId}: ${message}`);
 			return {
 				agentId,
 				mode: diagnostic.mode,
@@ -338,7 +321,6 @@ async function sendAlertViaFeishu(
 				message,
 			};
 		} else {
-			console.log(`[ALERT] Send failed (user_id):`, msgData);
 			return {
 				agentId,
 				mode: diagnostic.mode,
@@ -349,7 +331,6 @@ async function sendAlertViaFeishu(
 		}
 	} catch (err: unknown) {
 		const alertError = err instanceof Error ? err.message : String(err);
-		console.log(`[ALERT] Error sending message:`, err);
 		return {
 			agentId,
 			mode: diagnostic.mode,

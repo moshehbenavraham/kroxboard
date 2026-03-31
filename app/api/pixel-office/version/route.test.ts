@@ -45,6 +45,9 @@ describe("GET /api/pixel-office/version", () => {
 			tag: "v1.2.3",
 			cached: false,
 		});
+		const firstBody = await route.GET(createVersionRequest("198.51.100.63"));
+		const firstPayload = await firstBody.json();
+		expect(firstPayload.body).toBeUndefined();
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
 
 		const second = await route.GET(createVersionRequest("198.51.100.62"));

@@ -1,83 +1,83 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
+import { createClientPoller } from "@/lib/client-polling";
 import { parseProtectedResponse } from "@/lib/operator-elevation-client";
 
 // Background alert checker that schedules future checks without running one on mount.
 export function AlertMonitor() {
+	const pathname = usePathname();
 	const { sessionState } = useOperatorElevation();
-	const [_enabled, setEnabled] = useState(false);
-	const [_checkInterval, _setCheckInterval] = useState(10);
-	const [_lastResults, setLastResults] = useState<string[]>([]);
+	const [config, setConfig] = useState<{
+		enabled: boolean;
+		checkInterval: number;
+	} | null>(null);
 	const hasElevatedSession = sessionState?.ok === true;
+	const alertsPageVisible = pathname === "/alerts";
 
 	useEffect(() => {
-		if (!hasElevatedSession) {
-			setEnabled(false);
+		if (!hasElevatedSession || alertsPageVisible) {
+			setConfig(null);
 			return;
 		}
 
-		let cancelled = false;
-		let timer: ReturnType<typeof setInterval> | null = null;
-		let checkInFlight = false;
 		const controller = new AbortController();
-
-		// Load config and schedule checks only after mount.
 		fetch("/api/alerts", { signal: controller.signal })
 			.then((r) => r.json())
-			.then((config) => {
-				if (cancelled) return;
-				if (config.enabled) {
-					setEnabled(true);
-					const checkAlerts = () => {
-						if (cancelled || checkInFlight) return;
-						checkInFlight = true;
-						fetch("/api/alerts/check", {
-							method: "POST",
-							signal: controller.signal,
-						})
-							.then((response) =>
-								parseProtectedResponse<{ results?: string[] }>(response),
-							)
-							.then((result) => {
-								if (!result.ok) return;
-								if (result.data.results && result.data.results.length > 0) {
-									setLastResults(result.data.results);
-									console.log(
-										"[AlertMonitor] Alerts triggered:",
-										result.data.results,
-									);
-								}
-							})
-							.catch((error: unknown) => {
-								if (error instanceof Error && error.name === "AbortError") {
-									return;
-								}
-								console.error(error);
-							})
-							.finally(() => {
-								checkInFlight = false;
-							});
-					};
-
-					// Start the interval timer.
-					timer = setInterval(
-						checkAlerts,
-						(config.checkInterval || 10) * 60 * 1000,
-					);
+			.then((nextConfig) => {
+				if (!nextConfig?.enabled) {
+					setConfig({ enabled: false, checkInterval: 10 });
 					return;
 				}
-				setEnabled(false);
+				setConfig({
+					enabled: true,
+					checkInterval:
+						typeof nextConfig.checkInterval === "number"
+							? nextConfig.checkInterval
+							: 10,
+				});
 			})
-			.catch(console.error);
+			.catch((error: unknown) => {
+				if (error instanceof Error && error.name === "AbortError") {
+					return;
+				}
+				setConfig(null);
+			});
 
 		return () => {
-			cancelled = true;
 			controller.abort();
-			if (timer) clearInterval(timer);
 		};
-	}, [hasElevatedSession]);
+	}, [alertsPageVisible, hasElevatedSession]);
+
+	useEffect(() => {
+		if (!hasElevatedSession || alertsPageVisible || !config?.enabled) {
+			return;
+		}
+
+		const poller = createClientPoller<{ results?: string[] }>({
+			intervalMs: config.checkInterval * 60 * 1000,
+			sharedKey: "alerts:scheduled-check",
+			reuseResultMs: 60_000,
+			shouldPoll: () => hasElevatedSession && pathname !== "/alerts",
+			request: async (signal) => {
+				const response = await fetch("/api/alerts/check", {
+					method: "POST",
+					signal,
+				});
+				const result = await parseProtectedResponse<{ results?: string[] }>(
+					response,
+				);
+				return result.ok ? result.data : { results: [] };
+			},
+		});
+
+		poller.start();
+		return () => {
+			poller.stop();
+		};
+	}, [alertsPageVisible, config, hasElevatedSession, pathname]);
 
 	// Render nothing; this runs only in the background.
 	return null;

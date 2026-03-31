@@ -8,22 +8,33 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AlertsPage from "./page";
 
+const { mockCreateClientPoller, mockPoller } = vi.hoisted(() => ({
+	mockCreateClientPoller: vi.fn(),
+	mockPoller: {
+		start: vi.fn(),
+		stop: vi.fn(),
+		trigger: vi.fn(),
+		isInFlight: vi.fn(() => false),
+	},
+}));
+
 const mockRunProtectedRequest = vi.fn();
+let mockSessionState: any = {
+	ok: false,
+	error: "Operator elevation required",
+	auth: {
+		ok: false,
+		type: "operator_auth",
+		state: "challenge_required",
+		message: "Operator elevation required",
+		canChallenge: true,
+	},
+};
 
 vi.mock("@/app/components/operator-elevation-provider", () => ({
 	useOperatorElevation: () => ({
 		runProtectedRequest: mockRunProtectedRequest,
-		sessionState: {
-			ok: false,
-			error: "Operator elevation required",
-			auth: {
-				ok: false,
-				type: "operator_auth",
-				state: "challenge_required",
-				message: "Operator elevation required",
-				canChallenge: true,
-			},
-		},
+		sessionState: mockSessionState,
 		sessionLoading: false,
 		refreshSessionState: vi.fn(),
 		clearSession: vi.fn(),
@@ -38,6 +49,10 @@ vi.mock("@/lib/i18n", () => ({
 	}),
 }));
 
+vi.mock("@/lib/client-polling", () => ({
+	createClientPoller: mockCreateClientPoller,
+}));
+
 function jsonResponse(payload: unknown, status = 200): Response {
 	return new Response(JSON.stringify(payload), {
 		status,
@@ -45,15 +60,42 @@ function jsonResponse(payload: unknown, status = 200): Response {
 	});
 }
 
+function setVisibilityState(state: "visible" | "hidden"): void {
+	Object.defineProperty(document, "visibilityState", {
+		configurable: true,
+		value: state,
+	});
+	Object.defineProperty(document, "hidden", {
+		configurable: true,
+		value: state === "hidden",
+	});
+}
+
 afterEach(() => {
 	cleanup();
 	vi.unstubAllGlobals();
 	vi.clearAllMocks();
+	vi.useRealTimers();
 	localStorage.clear();
+	setVisibilityState("visible");
 });
 
 describe("Alerts page operator banners", () => {
 	beforeEach(() => {
+		mockCreateClientPoller.mockReset().mockReturnValue(mockPoller);
+		mockPoller.start.mockReset();
+		mockPoller.stop.mockReset();
+		mockSessionState = {
+			ok: false,
+			error: "Operator elevation required",
+			auth: {
+				ok: false,
+				type: "operator_auth",
+				state: "challenge_required",
+				message: "Operator elevation required",
+				canChallenge: true,
+			},
+		};
 		mockRunProtectedRequest.mockReset().mockResolvedValue({
 			ok: false,
 			feature: {
@@ -148,5 +190,24 @@ describe("Alerts page operator banners", () => {
 		const banner = screen.getByRole("status");
 		expect(banner.textContent).toContain("Rate limited");
 		expect(document.activeElement).toBe(banner);
+	});
+
+	it("configures the shared scheduled poller when the operator session is elevated", async () => {
+		mockSessionState = { ok: true };
+
+		render(<AlertsPage />);
+
+		await Promise.resolve();
+		await Promise.resolve();
+		await waitFor(() => {
+			expect(mockCreateClientPoller).toHaveBeenCalledWith(
+				expect.objectContaining({
+					intervalMs: 10 * 60 * 1000,
+					sharedKey: "alerts:scheduled-check",
+					reuseResultMs: 60_000,
+				}),
+			);
+			expect(mockPoller.start).toHaveBeenCalledTimes(1);
+		});
 	});
 });

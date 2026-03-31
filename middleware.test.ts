@@ -29,6 +29,9 @@ describe("middleware", () => {
 		expect(response.headers.get("Cross-Origin-Resource-Policy")).toBe(
 			"same-origin",
 		);
+		expect(response.headers.get("X-Permitted-Cross-Domain-Policies")).toBe(
+			"none",
+		);
 		expect(response.headers.get("Permissions-Policy")).toContain("camera=()");
 		expect(response.headers.get("X-DNS-Prefetch-Control")).toBe("off");
 	});
@@ -40,6 +43,20 @@ describe("middleware", () => {
 		const csp = response.headers.get("Content-Security-Policy");
 		expect(csp).toContain("default-src 'self'");
 		expect(csp).toContain("script-src 'self'");
+		expect(csp).toContain("worker-src 'self' blob:");
+		expect(csp).toContain("frame-src 'none'");
+	});
+
+	it("sets HSTS only for HTTPS requests", () => {
+		const httpsRequest = createMockRequest("https://board.example.com/");
+		const httpsResponse = middleware(httpsRequest);
+		expect(httpsResponse.headers.get("Strict-Transport-Security")).toBe(
+			"max-age=63072000; includeSubDomains; preload",
+		);
+
+		const httpRequest = createMockRequest("http://localhost:3000/");
+		const httpResponse = middleware(httpRequest);
+		expect(httpResponse.headers.get("Strict-Transport-Security")).toBeNull();
 	});
 
 	it("sets rate limit headers", () => {

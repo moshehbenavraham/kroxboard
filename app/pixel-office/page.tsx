@@ -1,8 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmActionDialog } from "@/app/components/confirm-action-dialog";
 import { OperatorActionBanner } from "@/app/components/operator-action-banner";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
+import {
+	readBoundedStorageRecord,
+	readBoundedStorageValue,
+	writeBoundedStorageValue,
+} from "@/lib/client-persistence";
+import { createClientPoller } from "@/lib/client-polling";
 import { buildGatewayHomeLaunchPath } from "@/lib/gateway-launch";
 import { useI18n } from "@/lib/i18n";
 import {
@@ -91,11 +98,21 @@ type ReleaseInfo = {
 	tag: string;
 	name: string;
 	publishedAt: string;
-	body: string;
 	htmlUrl: string;
 	cached?: boolean;
 	stale?: boolean;
 	checkedAt?: string;
+};
+
+const PIXEL_OFFICE_SOUND_STORAGE = {
+	ttlMs: 365 * 24 * 60 * 60 * 1000,
+	maxBytes: 512,
+};
+
+const PIXEL_OFFICE_DIAGNOSTIC_STORAGE = {
+	ttlMs: 24 * 60 * 60 * 1000,
+	maxBytes: 48 * 1024,
+	maxEntries: 512,
 };
 
 type AgentStats = {
@@ -182,6 +199,8 @@ type LayoutSaveBannerError = Error & {
 	banner?: ProtectedRequestBannerState;
 };
 
+type PendingEditConfirmation = "reset_layout" | "delete_furniture" | null;
+
 function createLayoutSaveBannerError(
 	banner: ProtectedRequestBannerState,
 ): LayoutSaveBannerError {
@@ -201,6 +220,36 @@ function getLayoutSaveBannerFromError(
 
 	const message = error instanceof Error ? error.message : fallbackMessage;
 	return createProtectedRequestBannerState("error", message);
+}
+
+function getEditConfirmationCopy(
+	action: Exclude<PendingEditConfirmation, null>,
+): {
+	title: string;
+	description: string;
+	confirmLabel: string;
+	cancelMessage: string;
+	pendingMessage: string;
+} {
+	if (action === "reset_layout") {
+		return {
+			title: "Reset office layout?",
+			description:
+				"This restores the last saved layout and discards unsaved edits.",
+			confirmLabel: "Reset layout",
+			cancelMessage: "Layout reset cancelled.",
+			pendingMessage: "Confirm the layout reset before changes are applied.",
+		};
+	}
+
+	return {
+		title: "Delete selected furniture?",
+		description:
+			"This removes the selected furniture item from the current layout.",
+		confirmLabel: "Delete furniture",
+		cancelMessage: "Furniture deletion cancelled.",
+		pendingMessage: "Confirm furniture deletion before changes are applied.",
+	};
 }
 
 /** Convert mouse event to tile coordinates */
@@ -406,6 +455,9 @@ export default function PixelOfficePage() {
 	> | null>(null);
 	const [layoutSaveBanner, setLayoutSaveBanner] =
 		useState<ProtectedRequestBannerState | null>(null);
+	const [pendingEditConfirmation, setPendingEditConfirmation] =
+		useState<PendingEditConfirmation>(null);
+	const [confirmingEditAction, setConfirmingEditAction] = useState(false);
 	const selectedAgentOpenedAtRef = useRef(0);
 	const tokenRankOpenedAtRef = useRef(0);
 	const modelPanelOpenedAtRef = useRef(0);
@@ -480,14 +532,12 @@ export default function PixelOfficePage() {
 		}
 	}, []);
 
-	const refreshGatewayHealthSnapshot = useCallback(async () => {
+	const applyGatewayHealthSnapshot = useCallback((data: any) => {
 		let rawStatus: GatewaySreState = "down";
 		let error: string | null = null;
 		let responseMs: number | null = null;
 		let checkedAt: number | null = null;
-		try {
-			const res = await fetch("/api/gateway-health", { cache: "no-store" });
-			const data = await res.json();
+		if (data) {
 			checkedAt =
 				typeof data?.checkedAt === "number" ? data.checkedAt : Date.now();
 			responseMs =
@@ -509,7 +559,7 @@ export default function PixelOfficePage() {
 			} else {
 				rawStatus = "healthy";
 			}
-		} catch {
+		} else {
 			rawStatus = "down";
 			error = "fetch failed";
 			checkedAt = Date.now();
@@ -570,6 +620,16 @@ export default function PixelOfficePage() {
 			checkedAt,
 		});
 	}, []);
+
+	const refreshGatewayHealthSnapshot = useCallback(async () => {
+		try {
+			const res = await fetch("/api/gateway-health", { cache: "no-store" });
+			const data = await res.json();
+			applyGatewayHealthSnapshot(data);
+		} catch {
+			applyGatewayHealthSnapshot(null);
+		}
+	}, [applyGatewayHealthSnapshot]);
 
 	// Update OfficeState locale when language changes or when office finishes loading
 	useEffect(() => {
@@ -647,9 +707,12 @@ export default function PixelOfficePage() {
 		};
 		loadLayout();
 
-		const savedSound = localStorage.getItem("pixel-office-sound");
-		if (savedSound !== null) {
-			const enabled = savedSound !== "false";
+		const savedSound = readBoundedStorageValue<boolean>(
+			"pixel-office-sound",
+			PIXEL_OFFICE_SOUND_STORAGE,
+		);
+		if (typeof savedSound === "boolean") {
+			const enabled = savedSound;
 			setSoundOn(enabled);
 			setSoundEnabled(enabled);
 		}
@@ -1224,42 +1287,64 @@ export default function PixelOfficePage() {
 
 	// Poll gateway health for server alarm lamp in Pixel Office
 	useEffect(() => {
-		void refreshGatewayHealthSnapshot();
-		const interval = setInterval(
-			refreshGatewayHealthSnapshot,
-			GATEWAY_HEALTH_POLL_INTERVAL_MS,
-		);
-		return () => clearInterval(interval);
-	}, [refreshGatewayHealthSnapshot]);
+		const poller = createClientPoller<any>({
+			intervalMs: GATEWAY_HEALTH_POLL_INTERVAL_MS,
+			immediate: true,
+			sharedKey: "gateway-health",
+			reuseResultMs: 5_000,
+			request: async (signal) => {
+				const response = await fetch("/api/gateway-health", {
+					cache: "no-store",
+					signal,
+				});
+				return response.json();
+			},
+			onSuccess: (data) => {
+				applyGatewayHealthSnapshot(data);
+			},
+			onError: () => {
+				applyGatewayHealthSnapshot(null);
+			},
+		});
+
+		poller.start();
+		return () => {
+			poller.stop();
+		};
+	}, [applyGatewayHealthSnapshot]);
 
 	useEffect(() => {
-		if (!selectedAgentId) return;
-		try {
-			const modelRaw = localStorage.getItem("agentTestResults");
-			setCachedModelTestResults(modelRaw ? JSON.parse(modelRaw) : null);
-		} catch {
+		if (!selectedAgentId) {
 			setCachedModelTestResults(null);
-		}
-		try {
-			const platformRaw = localStorage.getItem("platformTestResults");
-			setCachedPlatformTestResults(
-				platformRaw ? JSON.parse(platformRaw) : null,
-			);
-		} catch {
 			setCachedPlatformTestResults(null);
-		}
-		try {
-			const sessionRaw = localStorage.getItem("sessionTestResults");
-			setCachedSessionTestResults(sessionRaw ? JSON.parse(sessionRaw) : null);
-		} catch {
 			setCachedSessionTestResults(null);
-		}
-		try {
-			const dmRaw = localStorage.getItem("dmSessionResults");
-			setCachedDmSessionResults(dmRaw ? JSON.parse(dmRaw) : null);
-		} catch {
 			setCachedDmSessionResults(null);
+			return;
 		}
+		setCachedModelTestResults(
+			readBoundedStorageRecord<AgentModelTestResult | null>(
+				"agentTestResults",
+				PIXEL_OFFICE_DIAGNOSTIC_STORAGE,
+			),
+		);
+		setCachedPlatformTestResults(
+			readBoundedStorageRecord<PlatformTestResult | null>(
+				"platformTestResults",
+				PIXEL_OFFICE_DIAGNOSTIC_STORAGE,
+			),
+		);
+		setCachedSessionTestResults(
+			readBoundedStorageRecord<AgentSessionTestResult | null>(
+				"sessionTestResults",
+				PIXEL_OFFICE_DIAGNOSTIC_STORAGE,
+			),
+		);
+		setCachedDmSessionResults(
+			readBoundedStorageRecord<PlatformTestResult | null>(
+				"dmSessionResults",
+				PIXEL_OFFICE_DIAGNOSTIC_STORAGE,
+			),
+		);
 	}, [selectedAgentId]);
 
 	// Keep gateway SRE head label aligned with current locale.
@@ -1365,7 +1450,7 @@ export default function PixelOfficePage() {
 		}
 	}, [forceEditorUpdate, runProtectedRequest]);
 
-	const handleReset = useCallback(() => {
+	const resetLayout = useCallback(() => {
 		const office = officeRef.current;
 		const editor = editorRef.current;
 		if (!office) return;
@@ -1377,6 +1462,61 @@ export default function PixelOfficePage() {
 		editor.clearSelection();
 		forceEditorUpdate();
 	}, [forceEditorUpdate]);
+
+	const deleteSelectedFurniture = useCallback(() => {
+		const office = officeRef.current;
+		const editor = editorRef.current;
+		if (!office || !editor.selectedFurnitureUid) return;
+		applyEdit(removeFurniture(office.layout, editor.selectedFurnitureUid));
+		editor.clearSelection();
+		forceEditorUpdate();
+	}, [applyEdit, forceEditorUpdate]);
+
+	const requestEditConfirmation = useCallback(
+		(action: Exclude<PendingEditConfirmation, null>) => {
+			const copy = getEditConfirmationCopy(action);
+			setConfirmingEditAction(false);
+			setPendingEditConfirmation(action);
+			setLayoutSaveBanner(
+				createProtectedRequestBannerState("pending", copy.pendingMessage),
+			);
+		},
+		[],
+	);
+
+	const cancelEditConfirmation = useCallback(() => {
+		if (!pendingEditConfirmation || confirmingEditAction) return;
+		const copy = getEditConfirmationCopy(pendingEditConfirmation);
+		setPendingEditConfirmation(null);
+		setLayoutSaveBanner(
+			createProtectedRequestBannerState("info", copy.cancelMessage),
+		);
+	}, [confirmingEditAction, pendingEditConfirmation]);
+
+	const confirmEditAction = useCallback(() => {
+		if (!pendingEditConfirmation) return;
+		setConfirmingEditAction(true);
+		try {
+			if (pendingEditConfirmation === "reset_layout") {
+				resetLayout();
+			} else {
+				deleteSelectedFurniture();
+			}
+			setLayoutSaveBanner(null);
+		} finally {
+			setPendingEditConfirmation(null);
+			setConfirmingEditAction(false);
+		}
+	}, [deleteSelectedFurniture, pendingEditConfirmation, resetLayout]);
+
+	const handleReset = useCallback(() => {
+		requestEditConfirmation("reset_layout");
+	}, [requestEditConfirmation]);
+
+	const handleDeleteFurnitureRequest = useCallback(() => {
+		if (!editorRef.current.selectedFurnitureUid) return;
+		requestEditConfirmation("delete_furniture");
+	}, [requestEditConfirmation]);
 
 	// -- Mouse events ------------------------------------------
 	const handleMouseMove = (e: React.MouseEvent) => {
@@ -2120,7 +2260,7 @@ export default function PixelOfficePage() {
 		const handleKeyDown = (e: KeyboardEvent) => {
 			const editor = editorRef.current;
 			const office = officeRef.current;
-			if (!editor.isEditMode || !office) return;
+			if (!editor.isEditMode || !office || pendingEditConfirmation) return;
 
 			if (e.key === "r" || e.key === "R") {
 				if (editor.selectedFurnitureUid) {
@@ -2149,11 +2289,8 @@ export default function PixelOfficePage() {
 				handleRedo();
 			} else if (e.key === "Delete" || e.key === "Backspace") {
 				if (editor.selectedFurnitureUid) {
-					applyEdit(
-						removeFurniture(office.layout, editor.selectedFurnitureUid),
-					);
-					editor.clearSelection();
-					forceEditorUpdate();
+					e.preventDefault();
+					handleDeleteFurnitureRequest();
 				}
 			} else if (e.key === "Escape") {
 				// Multi-stage escape
@@ -2172,7 +2309,14 @@ export default function PixelOfficePage() {
 		};
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [applyEdit, handleUndo, handleRedo, forceEditorUpdate]);
+	}, [
+		applyEdit,
+		forceEditorUpdate,
+		handleDeleteFurnitureRequest,
+		handleRedo,
+		handleUndo,
+		pendingEditConfirmation,
+	]);
 
 	// Esc closes modal overlays in non-edit mode for keyboard accessibility.
 	useEffect(() => {
@@ -2289,6 +2433,9 @@ export default function PixelOfficePage() {
 		editor.isEditMode = !editor.isEditMode;
 		if (!editor.isEditMode) {
 			editor.reset();
+			setPendingEditConfirmation(null);
+			setConfirmingEditAction(false);
+			setLayoutSaveBanner(null);
 		}
 		setIsEditMode(editor.isEditMode);
 	}, []);
@@ -2297,7 +2444,11 @@ export default function PixelOfficePage() {
 		const newVal = !isSoundEnabled();
 		setSoundEnabled(newVal);
 		setSoundOn(newVal);
-		localStorage.setItem("pixel-office-sound", String(newVal));
+		writeBoundedStorageValue(
+			"pixel-office-sound",
+			newVal,
+			PIXEL_OFFICE_SOUND_STORAGE,
+		);
 		if (newVal) {
 			void playBackgroundMusic();
 		} else {
@@ -2503,6 +2654,10 @@ export default function PixelOfficePage() {
 			</div>
 		);
 	};
+
+	const editConfirmationCopy = pendingEditConfirmation
+		? getEditConfirmationCopy(pendingEditConfirmation)
+		: null;
 
 	return (
 		<div className="relative flex flex-col overflow-hidden h-[calc(100dvh-3.5rem)] md:h-full">
@@ -3344,8 +3499,18 @@ export default function PixelOfficePage() {
 													{new Date(info.publishedAt).toLocaleDateString()}
 												</span>
 											</div>
-											<div className="text-xs text-[var(--text)] whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
-												{info.body}
+											<div className="rounded border border-[var(--border)] bg-[var(--bg)] px-3 py-2 text-xs text-[var(--text-muted)]">
+												<div>Latest release: {info.tag}</div>
+												<div>
+													Published:{" "}
+													{new Date(info.publishedAt).toLocaleString()}
+												</div>
+												{info.checkedAt ? (
+													<div>
+														Last checked:{" "}
+														{new Date(info.checkedAt).toLocaleString()}
+													</div>
+												) : null}
 											</div>
 											<a
 												href={info.htmlUrl}
@@ -3480,6 +3645,19 @@ export default function PixelOfficePage() {
 					</div>
 				)}
 
+				{editConfirmationCopy && (
+					<ConfirmActionDialog
+						open
+						title={editConfirmationCopy.title}
+						description={editConfirmationCopy.description}
+						confirmLabel={editConfirmationCopy.confirmLabel}
+						pending={confirmingEditAction}
+						variant="danger"
+						onConfirm={confirmEditAction}
+						onCancel={cancelEditConfirmation}
+					/>
+				)}
+
 				{/* Fullscreen photograph viewer */}
 				{fullscreenPhoto && photographRef.current && (
 					<div
@@ -3517,7 +3695,7 @@ export default function PixelOfficePage() {
 							onUndo={handleUndo}
 							onRedo={handleRedo}
 							onSave={handleSave}
-							onReset={handleReset}
+							onRequestReset={handleReset}
 						/>
 						<EditorToolbar
 							activeTool={editor.activeTool}
@@ -3535,16 +3713,7 @@ export default function PixelOfficePage() {
 								handleSelectedFurnitureColorChange
 							}
 							onFurnitureTypeChange={handleFurnitureTypeChange}
-							onDeleteFurniture={() => {
-								const office = officeRef.current;
-								const editor = editorRef.current;
-								if (!office || !editor.selectedFurnitureUid) return;
-								applyEdit(
-									removeFurniture(office.layout, editor.selectedFurnitureUid),
-								);
-								editor.clearSelection();
-								forceEditorUpdate();
-							}}
+							onRequestDeleteFurniture={handleDeleteFurnitureRequest}
 						/>
 					</>
 				)}

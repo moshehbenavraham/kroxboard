@@ -15,9 +15,13 @@ import {
 	it,
 	vi,
 } from "vitest";
+import { writeBoundedStorageValue } from "@/lib/client-persistence";
 import PixelOfficePage from "./page";
 
 const mockRunProtectedRequest = vi.fn();
+const { mockSetSoundEnabled } = vi.hoisted(() => ({
+	mockSetSoundEnabled: vi.fn(),
+}));
 
 vi.mock("@/app/components/operator-elevation-provider", () => ({
 	useOperatorElevation: () => ({
@@ -41,7 +45,7 @@ vi.mock("@/lib/pixel-office/notificationSound", () => ({
 	isSoundEnabled: () => false,
 	playBackgroundMusic: vi.fn(async () => undefined),
 	playDoneSound: vi.fn(),
-	setSoundEnabled: vi.fn(),
+	setSoundEnabled: mockSetSoundEnabled,
 	skipToNextTrack: vi.fn(),
 	stopBackgroundMusic: vi.fn(),
 	unlockAudio: vi.fn(),
@@ -71,15 +75,34 @@ vi.mock("../components/agent-card", () => ({
 }));
 
 vi.mock("./components/EditActionBar", () => ({
-	EditActionBar: ({ onSave }: { onSave: () => void }) => (
-		<button type="button" onClick={onSave}>
-			save-layout
-		</button>
+	EditActionBar: ({
+		onSave,
+		onRequestReset,
+	}: {
+		onSave: () => void;
+		onRequestReset: () => void;
+	}) => (
+		<div>
+			<button type="button" onClick={onSave}>
+				save-layout
+			</button>
+			<button type="button" onClick={onRequestReset}>
+				request-reset
+			</button>
+		</div>
 	),
 }));
 
 vi.mock("./components/EditorToolbar", () => ({
-	EditorToolbar: () => <div>Editor toolbar</div>,
+	EditorToolbar: ({
+		onRequestDeleteFurniture,
+	}: {
+		onRequestDeleteFurniture: () => void;
+	}) => (
+		<button type="button" onClick={onRequestDeleteFurniture}>
+			request-delete
+		</button>
+	),
 }));
 
 function jsonResponse(payload: unknown, status = 200): Response {
@@ -165,6 +188,7 @@ describe("Pixel office page operator banners", () => {
 	let fetchMock: ReturnType<typeof vi.fn>;
 
 	beforeEach(() => {
+		mockSetSoundEnabled.mockReset();
 		mockRunProtectedRequest.mockReset().mockResolvedValue({
 			ok: false,
 			mutation: {
@@ -263,5 +287,44 @@ describe("Pixel office page operator banners", () => {
 				String(input).includes("/api/pixel-office/version?force=1"),
 			),
 		).toBe(false);
+	});
+
+	it("restores the bounded sound preference on load", async () => {
+		writeBoundedStorageValue("pixel-office-sound", false, {
+			storage: localStorage,
+			ttlMs: 365 * 24 * 60 * 60 * 1000,
+		});
+
+		render(<PixelOfficePage />);
+
+		await waitFor(() => {
+			expect(mockSetSoundEnabled).toHaveBeenCalledWith(false);
+		});
+	});
+
+	it("requires confirmation before resetting the layout and reports cancellations", async () => {
+		render(<PixelOfficePage />);
+
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "request-reset",
+			}),
+		);
+
+		expect(
+			await screen.findByRole("alertdialog", {
+				name: "Reset office layout?",
+			}),
+		).toBeTruthy();
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Cancel",
+			}),
+		);
+
+		await waitFor(() => {
+			expect(screen.getByText("Layout reset cancelled.")).toBeTruthy();
+		});
 	});
 });

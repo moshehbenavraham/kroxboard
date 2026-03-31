@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { createClientPoller } from "@/lib/client-polling";
 import { LanguageSwitcher, useI18n } from "@/lib/i18n";
 import { ThemeSwitcher } from "@/lib/theme";
 
@@ -534,23 +535,33 @@ export function Sidebar() {
 	}, [pathname]);
 
 	useEffect(() => {
-		let cancelled = false;
-		const fetchOpenclawVersion = async () => {
-			try {
-				const res = await fetch("/api/gateway-health", { cache: "no-store" });
-				if (!res.ok) return;
-				const data = await res.json();
-				if (cancelled) return;
+		const poller = createClientPoller<{ openclawVersion?: string }>({
+			intervalMs: 10_000,
+			immediate: true,
+			sharedKey: "gateway-health",
+			reuseResultMs: 5_000,
+			request: async (signal) => {
+				const response = await fetch("/api/gateway-health", {
+					cache: "no-store",
+					signal,
+				});
+				return response.json();
+			},
+			onSuccess: (data) => {
 				const version =
 					typeof data?.openclawVersion === "string"
 						? data.openclawVersion.trim()
 						: "";
 				setMobileOpenclawVersion(version || null);
-			} catch {}
-		};
-		void fetchOpenclawVersion();
+			},
+			onError: () => {
+				setMobileOpenclawVersion(null);
+			},
+		});
+
+		poller.start();
 		return () => {
-			cancelled = true;
+			poller.stop();
 		};
 	}, []);
 
@@ -564,7 +575,7 @@ export function Sidebar() {
 							className="w-9 h-9 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] text-base"
 							aria-label="Open menu"
 						>
-							☰
+							|||
 						</button>
 						<Link
 							href="/"
@@ -585,7 +596,7 @@ export function Sidebar() {
 									opacity: logoCarry.hidden ? 0 : 1,
 								}}
 							>
-								🦞
+								OC
 							</span>
 							<div className="min-w-0">
 								<div className="text-xs font-bold tracking-wide truncate">
@@ -623,7 +634,7 @@ export function Sidebar() {
 									className="w-8 h-8 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)]"
 									aria-label="Close menu"
 								>
-									×
+									x
 								</button>
 							</div>
 							<nav className="flex-1 overflow-y-auto p-3">
@@ -668,7 +679,7 @@ export function Sidebar() {
 											}`}
 										>
 											<span className="flex items-center gap-2">
-												<span className="text-sm">🧪</span>
+												<span className="text-sm">Lab</span>
 												<span className="text-sm font-semibold tracking-wide">
 													{t("nav.experiments")}
 												</span>
@@ -680,7 +691,7 @@ export function Sidebar() {
 														: "text-[var(--text-muted)]"
 												}`}
 											>
-												⌄
+												v
 											</span>
 										</button>
 										{experimentOpen && (
@@ -694,8 +705,8 @@ export function Sidebar() {
 													}`}
 												>
 													{bugsEnabled
-														? `🐛 ${t("nav.bugsOn")}`
-														: `🐛 ${t("nav.bugsOff")}`}
+														? `BUG ${t("nav.bugsOn")}`
+														: `BUG ${t("nav.bugsOff")}`}
 												</button>
 												<label className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs rounded-lg border bg-[var(--card)] border-[var(--border)] text-[var(--text-muted)]">
 													<span>
@@ -753,7 +764,7 @@ export function Sidebar() {
 										cursor: logoCursor,
 									}}
 								>
-									🦞
+									OC
 								</span>
 							</Link>
 							<button
@@ -761,7 +772,7 @@ export function Sidebar() {
 								className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors text-lg"
 								title={t("nav.expandSidebar")}
 							>
-								»
+								&gt;&gt;
 							</button>
 						</div>
 					) : (
@@ -787,7 +798,7 @@ export function Sidebar() {
 											cursor: logoCursor,
 										}}
 									>
-										🦞
+										OC
 									</span>
 									<div>
 										<div className="text-sm font-bold text-[var(--text)] tracking-wide">
@@ -803,7 +814,7 @@ export function Sidebar() {
 									className="text-[var(--text-muted)] hover:text-[var(--text)] transition-colors text-lg"
 									title={t("nav.collapseSidebar")}
 								>
-									«
+									&lt;&lt;
 								</button>
 							</div>
 							<div className="flex items-center gap-2 mt-2 pl-8">
@@ -826,7 +837,7 @@ export function Sidebar() {
 									<div className="px-2 mb-2 text-[10px] font-semibold text-[var(--text-muted)] uppercase tracking-wider flex items-center justify-between">
 										{t(group.group)}
 										<span className="text-[var(--text-muted)] opacity-40">
-											—
+											-
 										</span>
 									</div>
 								)}
@@ -871,7 +882,7 @@ export function Sidebar() {
 									}`}
 								>
 									<span className="flex items-center gap-2">
-										<span className="text-sm">🧪</span>
+										<span className="text-sm">Lab</span>
 										<span className="text-sm font-semibold tracking-wide">
 											{t("nav.experiments")}
 										</span>
@@ -883,7 +894,7 @@ export function Sidebar() {
 												: "text-[var(--text-muted)]"
 										}`}
 									>
-										⌄
+										v
 									</span>
 								</button>
 								{experimentOpen && (
@@ -897,8 +908,8 @@ export function Sidebar() {
 											}`}
 										>
 											{bugsEnabled
-												? `🐛 ${t("nav.bugsOn")}`
-												: `🐛 ${t("nav.bugsOff")}`}
+												? `BUG ${t("nav.bugsOn")}`
+												: `BUG ${t("nav.bugsOff")}`}
 										</button>
 										<label className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs rounded-lg border bg-[var(--card)] border-[var(--border)] text-[var(--text-muted)]">
 											<span>
@@ -926,7 +937,7 @@ export function Sidebar() {
 								title={t("nav.experiments")}
 								className="w-full flex items-center justify-center rounded-lg px-2 py-2 text-base border border-[var(--border)] bg-[var(--card)]/65 text-[var(--text)] hover:bg-[var(--bg)] transition-colors"
 							>
-								🧪
+								Lab
 							</button>
 						)}
 					</div>

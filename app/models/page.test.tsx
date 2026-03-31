@@ -109,4 +109,13 @@ describe("Models page operator banners", () => {
 		expect(alert.textContent).toContain("Invalid request");
 		expect(document.activeElement).toBe(alert);
 	});
+
+	it("clears malformed cached model diagnostics on load", async () => {
+		localStorage.setItem("modelTestResults", "{broken-json");
+
+		render(<ModelsPage />);
+
+		await screen.findByText("models.title");
+		expect(localStorage.getItem("modelTestResults")).toBeNull();
+	});
 });

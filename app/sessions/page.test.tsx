@@ -101,4 +101,32 @@ describe("Sessions page operator banners", () => {
 		expect(alert.textContent).toContain("Operator access denied");
 		expect(document.activeElement).toBe(alert);
 	});
+
+	it("drops expired cached session diagnostics before restore", async () => {
+		localStorage.setItem(
+			"sessionTestResults",
+			JSON.stringify({
+				version: 1,
+				kind: "record",
+				savedAt: 1,
+				expiresAt: 1,
+				entries: {
+					"agent:main:main": {
+						savedAt: 1,
+						value: {
+							status: "cached",
+							elapsed: 10,
+						},
+					},
+				},
+			}),
+		);
+
+		render(<SessionsPage />);
+
+		await screen.findByRole("button", {
+			name: "sessions.test",
+		});
+		expect(localStorage.getItem("sessionTestResults")).toBeNull();
+	});
 });

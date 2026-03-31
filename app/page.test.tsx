@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OperatorElevationProvider } from "@/app/components/operator-elevation-provider";
+import { writeBoundedStorageRecord } from "@/lib/client-persistence";
 import Home from "./page";
 
 vi.mock("./gateway-status", () => ({
@@ -14,9 +15,10 @@ vi.mock("./gateway-status", () => ({
 }));
 
 vi.mock("./components/agent-card", () => ({
-	AgentCard: ({ agent, onModelChange }: any) => (
+	AgentCard: ({ agent, onModelChange, testResult }: any) => (
 		<div>
 			<div>{`launch-path-${agent.id}:${agent.launchPath || "missing"}`}</div>
+			<div>{`restored-test-${agent.id}:${testResult?.text || "none"}`}</div>
 			<button
 				type="button"
 				onClick={() => {
@@ -178,5 +180,33 @@ describe("Home page operator elevation wiring", () => {
 			).toBeTruthy();
 		});
 		expect(screen.getByText("Dry-run mode")).toBeTruthy();
+	});
+
+	it("restores bounded cached diagnostics before rendering agent cards", async () => {
+		writeBoundedStorageRecord(
+			"agentTestResults",
+			{
+				main: {
+					ok: true,
+					text: "cached probe ok",
+					elapsed: 12,
+				},
+			},
+			{
+				storage: localStorage,
+				ttlMs: 24 * 60 * 60 * 1000,
+				maxEntries: 32,
+			},
+		);
+
+		render(
+			<OperatorElevationProvider>
+				<Home />
+			</OperatorElevationProvider>,
+		);
+
+		expect(
+			await screen.findByText("restored-test-main:cached probe ok"),
+		).toBeTruthy();
 	});
 });

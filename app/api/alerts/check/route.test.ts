@@ -148,6 +148,7 @@ describe("POST /api/alerts/check", () => {
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
 		fs.rmSync(tempOpenclawHome, { recursive: true, force: true });
 		process.env = { ...ORIGINAL_ENV };
 	});
@@ -226,6 +227,36 @@ describe("POST /api/alerts/check", () => {
 			status: "dry_run",
 			mode: "dry_run",
 		});
+	});
+
+	it("does not emit verbose alert transport console logs during a dry-run check", async () => {
+		const consoleLogSpy = vi
+			.spyOn(console, "log")
+			.mockImplementation(() => undefined);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							code: 0,
+							tenant_access_token: "tenant-token",
+						}),
+						{ status: 200 },
+					),
+			),
+		);
+		const cookie = await makeAuthCookie();
+		const route = await import("./route");
+		const response = await route.POST(
+			new Request("http://localhost:3000/api/alerts/check", {
+				method: "POST",
+				headers: withLocalOrigin({ cookie }),
+			}),
+		);
+		expect(response.status).toBe(200);
+		expect(consoleLogSpy).not.toHaveBeenCalled();
+		consoleLogSpy.mockRestore();
 	});
 
 	it("returns live-send notification metadata when live sends are enabled", async () => {

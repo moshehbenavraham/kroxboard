@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { OperatorActionBanner } from "@/app/components/operator-action-banner";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
+import { createClientPoller } from "@/lib/client-polling";
 import { useI18n } from "@/lib/i18n";
 import {
 	createProtectedRequestBannerState,
@@ -53,6 +54,8 @@ type OperatorBannerError = Error & {
 };
 
 const CRON_RULE_ID = "cron_continuous_failure";
+const MANUAL_CHECK_PENDING_MESSAGE = "Running a manual alert check.";
+const SCHEDULED_CHECK_PENDING_MESSAGE = "Running scheduled alert diagnostics.";
 
 const RULE_DESCRIPTIONS: Record<string, string> = {
 	model_unavailable: "Model Unavailable - Triggered when model testing fails",
@@ -102,6 +105,7 @@ export default function AlertsPage() {
 	>([]);
 	const [lastCheckTime, setLastCheckTime] = useState<string>("");
 	const [checkInterval, setCheckInterval] = useState(10);
+	const checkInFlightRef = useRef(false);
 	const hasElevatedSession = sessionState?.ok === true;
 
 	// Load the configured alert interval.
@@ -201,6 +205,23 @@ export default function AlertsPage() {
 		[timeLocale],
 	);
 
+	const clearScheduledPendingBanner = useCallback(() => {
+		setOperatorBanner((current) =>
+			current?.message === SCHEDULED_CHECK_PENDING_MESSAGE ? null : current,
+		);
+	}, []);
+
+	const beginCheck = useCallback((message: string) => {
+		checkInFlightRef.current = true;
+		setChecking(true);
+		setOperatorBanner(createProtectedRequestBannerState("pending", message));
+	}, []);
+
+	const finishCheck = useCallback(() => {
+		checkInFlightRef.current = false;
+		setChecking(false);
+	}, []);
+
 	// Load config and agent data.
 	useEffect(() => {
 		Promise.all([
@@ -219,54 +240,66 @@ export default function AlertsPage() {
 	useEffect(() => {
 		if (!config?.enabled || !hasElevatedSession) return;
 
-		const checkAlerts = () => {
-			setChecking(true);
-			setOperatorBanner(
-				createProtectedRequestBannerState(
-					"pending",
-					"Running scheduled alert diagnostics.",
-				),
-			);
-			fetch("/api/alerts/check", { method: "POST" })
-				.then((response) =>
-					parseProtectedResponse<AlertCheckResponse>(response),
-				)
-				.then((result) => {
-					if (!result.ok) {
-						setOperatorBanner(
-							getProtectedRequestBannerState(result) ??
-								createProtectedRequestBannerState(
-									"error",
-									getProtectedRequestError(result) || "Alert check failed",
-								),
+		const poller = createClientPoller<AlertCheckResponse>({
+			intervalMs: checkInterval * 60 * 1000,
+			sharedKey: "alerts:scheduled-check",
+			reuseResultMs: 60_000,
+			shouldPoll: () =>
+				hasElevatedSession &&
+				Boolean(config?.enabled) &&
+				!checkInFlightRef.current,
+			request: async (signal) => {
+				beginCheck(SCHEDULED_CHECK_PENDING_MESSAGE);
+				const response = await fetch("/api/alerts/check", {
+					method: "POST",
+					signal,
+				});
+				const result =
+					await parseProtectedResponse<AlertCheckResponse>(response);
+				if (!result.ok) {
+					const banner =
+						getProtectedRequestBannerState(result) ??
+						createProtectedRequestBannerState(
+							"error",
+							getProtectedRequestError(result) || "Alert check failed",
 						);
-						return;
-					}
-					applyCheckResponse(result.data);
-				})
-				.catch((error: unknown) => {
-					const message =
-						error instanceof Error ? error.message : "Alert check failed";
-					setOperatorBanner(
-						createProtectedRequestBannerState("error", message),
-					);
-				})
-				.finally(() => setChecking(false));
-		};
+					throw createOperatorBannerError(banner);
+				}
+				return result.data;
+			},
+			onSuccess: (data) => {
+				applyCheckResponse(data);
+				finishCheck();
+			},
+			onError: (error) => {
+				setOperatorBanner(
+					getOperatorBannerFromError(error, "Alert check failed"),
+				);
+				finishCheck();
+			},
+			onSkip: () => {
+				finishCheck();
+				clearScheduledPendingBanner();
+			},
+		});
 
-		// Only set the timer here; do not run an immediate check.
-		const timer = setInterval(checkAlerts, checkInterval * 60 * 1000);
-		return () => clearInterval(timer);
-	}, [config?.enabled, checkInterval, hasElevatedSession, applyCheckResponse]);
+		poller.start();
+		return () => {
+			poller.stop();
+			finishCheck();
+		};
+	}, [
+		applyCheckResponse,
+		beginCheck,
+		checkInterval,
+		clearScheduledPendingBanner,
+		config?.enabled,
+		finishCheck,
+		hasElevatedSession,
+	]);
 
 	const handleManualCheck = () => {
-		setChecking(true);
-		setOperatorBanner(
-			createProtectedRequestBannerState(
-				"pending",
-				"Running a manual alert check.",
-			),
-		);
+		beginCheck(MANUAL_CHECK_PENDING_MESSAGE);
 		runManualAlertCheck("alerts:manual-check")
 			.then((data) => {
 				applyCheckResponse(data);
@@ -276,7 +309,7 @@ export default function AlertsPage() {
 					getOperatorBannerFromError(error, "Alert check failed"),
 				);
 			})
-			.finally(() => setChecking(false));
+			.finally(() => finishCheck());
 	};
 
 	const handleToggle = () => {

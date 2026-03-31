@@ -9,7 +9,7 @@ interface EditActionBarProps {
 	onUndo: () => void;
 	onRedo: () => void;
 	onSave: () => void;
-	onReset: () => void;
+	onRequestReset: () => void;
 }
 
 const barBtnStyle: React.CSSProperties = {
@@ -35,7 +35,7 @@ export function EditActionBar({
 	onUndo,
 	onRedo,
 	onSave,
-	onReset,
+	onRequestReset,
 }: EditActionBarProps) {
 	const { t } = useI18n();
 
@@ -86,7 +86,11 @@ export function EditActionBar({
 					>
 						{t("pixelOffice.save")}
 					</button>
-					<button style={barBtnStyle} onClick={onReset}>
+					<button
+						style={barBtnStyle}
+						onClick={onRequestReset}
+						title="Reset layout (confirmation required)"
+					>
 						{t("pixelOffice.reset")}
 					</button>
 				</>

@@ -72,6 +72,7 @@ describe("GET /api/gateway-health", () => {
 		const body = await response.json();
 		expect(body.ok).toBe(true);
 		expect(body.launchPath).toBe("/gateway/chat");
+		expect(body.data).toBeUndefined();
 		expect(body.webUrl).toBeUndefined();
 	});
 
@@ -130,6 +131,7 @@ describe("GET /api/gateway-health", () => {
 		expect(body.ok).toBe(true);
 		expect(body.status).toBe("healthy");
 		expect(body.launchPath).toBe("/gateway/chat");
+		expect(body.data).toBeUndefined();
 	});
 
 	it("returns a sanitized down-state error when the CLI probe output is malformed", async () => {

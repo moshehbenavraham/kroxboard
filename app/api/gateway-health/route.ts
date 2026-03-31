@@ -129,10 +129,9 @@ export async function GET() {
 		if (resp.ok) {
 			const checkedAt = Date.now();
 			const responseMs = checkedAt - startedAt;
-			const data = await resp.json().catch(() => null);
+			await resp.json().catch(() => null);
 			return NextResponse.json({
 				ok: true,
-				data,
 				openclawVersion,
 				status: responseMs > DEGRADED_LATENCY_MS ? "degraded" : "healthy",
 				checkedAt,
@@ -150,7 +149,6 @@ export async function GET() {
 			const responseMs = checkedAt - startedAt;
 			return NextResponse.json({
 				ok: true,
-				data: null,
 				openclawVersion,
 				status: resp.status === 404 ? "healthy" : "degraded",
 				checkedAt,
@@ -168,7 +166,6 @@ export async function GET() {
 		if (cli.ok) {
 			return NextResponse.json({
 				ok: true,
-				data: null,
 				openclawVersion,
 				status: "healthy",
 				checkedAt,
@@ -196,7 +193,6 @@ export async function GET() {
 			const responseMs = checkedAt - startedAt;
 			return NextResponse.json({
 				ok: true,
-				data: null,
 				openclawVersion,
 				status: "degraded",
 				checkedAt,
@@ -214,7 +210,6 @@ export async function GET() {
 		if (cli.ok) {
 			return NextResponse.json({
 				ok: true,
-				data: null,
 				openclawVersion,
 				status: "healthy",
 				checkedAt,

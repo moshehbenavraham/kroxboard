@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { OperatorActionBanner } from "@/app/components/operator-action-banner";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
+import {
+	clearBoundedStorageKey,
+	readBoundedStorageRecord,
+	writeBoundedStorageRecord,
+} from "@/lib/client-persistence";
 import { useI18n } from "@/lib/i18n";
 import {
 	createProtectedRequestBannerState,
@@ -51,6 +56,12 @@ interface TestResult {
 	elapsed: number;
 	model?: string;
 }
+
+const MODEL_DIAGNOSTIC_STORAGE = {
+	ttlMs: 24 * 60 * 60 * 1000,
+	maxBytes: 24 * 1024,
+	maxEntries: 256,
+};
 
 // Format compact numbers.
 function formatNum(n: number) {
@@ -229,21 +240,25 @@ export default function ModelsPage() {
 			.catch((e) => setError(e.message));
 
 		// Restore saved test results from localStorage.
-		const savedTestResults = localStorage.getItem("modelTestResults");
-		if (savedTestResults) {
-			try {
-				setTestResults(JSON.parse(savedTestResults));
-			} catch (e) {
-				console.error("Failed to parse modelTestResults from localStorage", e);
-			}
-		}
+		setTestResults(
+			readBoundedStorageRecord<TestResult>(
+				"modelTestResults",
+				MODEL_DIAGNOSTIC_STORAGE,
+			) || {},
+		);
 	}, []);
 
 	// Persist test results to localStorage.
 	useEffect(() => {
 		if (Object.keys(testResults).length > 0) {
-			localStorage.setItem("modelTestResults", JSON.stringify(testResults));
+			writeBoundedStorageRecord(
+				"modelTestResults",
+				testResults,
+				MODEL_DIAGNOSTIC_STORAGE,
+			);
+			return;
 		}
+		clearBoundedStorageKey("modelTestResults");
 	}, [testResults]);
 
 	if (error) {

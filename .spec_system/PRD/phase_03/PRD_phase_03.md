@@ -4,7 +4,7 @@
 **Sessions**: 3
 **Estimated Duration**: 3-5 days
 
-**Progress**: 1/3 sessions (33%)
+**Progress**: 2/3 sessions (67%)
 
 ---
 
@@ -19,7 +19,7 @@ Phase 03 closes the remaining hardening debt left after the foundational, route,
 | Session | Name | Status | Est. Tasks | Validated |
 |---------|------|--------|------------|-----------|
 | 01 | State, cache, and environment hardening | Complete | ~12-18 | PASS |
-| 02 | Client and operational cleanup | Not Started | ~12-18 | - |
+| 02 | Client and operational cleanup | Complete | ~12-18 | PASS |
 | 03 | Verification and closeout | Not Started | ~15-20 | - |
 
 ---
@@ -27,12 +27,13 @@ Phase 03 closes the remaining hardening debt left after the foundational, route,
 ## Completed Sessions
 
 - `phase03-session01-state-cache-and-environment-hardening`
+- `phase03-session02-client-and-operational-cleanup`
 
 ---
 
 ## Upcoming Sessions
 
-- Session 02: Client and operational cleanup
+- Session 03: Verification and closeout
 
 ---
 

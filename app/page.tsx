@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { OperatorActionBanner } from "@/app/components/operator-action-banner";
 import { useOperatorElevation } from "@/app/components/operator-elevation-provider";
+import {
+	clearBoundedStorageKey,
+	readBoundedStorageRecord,
+	writeBoundedStorageRecord,
+} from "@/lib/client-persistence";
 import { useI18n } from "@/lib/i18n";
 import {
 	createProtectedRequestBannerState,
@@ -122,6 +127,17 @@ let cachedHomeAllStats: AllStats | null = null;
 let cachedHomeLastUpdated = "";
 let cachedHomeRefreshInterval = 0;
 let cachedHomeAgentStates: Record<string, string> = {};
+const DIAGNOSTIC_STORAGE_TTL_MS = 24 * 60 * 60 * 1000;
+const DIAGNOSTIC_STORAGE_MAX_BYTES = 48 * 1024;
+const DIAGNOSTIC_STORAGE_MAX_ENTRIES = 512;
+
+function getDiagnosticStorageOptions() {
+	return {
+		ttlMs: DIAGNOSTIC_STORAGE_TTL_MS,
+		maxBytes: DIAGNOSTIC_STORAGE_MAX_BYTES,
+		maxEntries: DIAGNOSTIC_STORAGE_MAX_ENTRIES,
+	};
+}
 
 function formatTokens(n: number): string {
 	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -547,46 +563,30 @@ export default function Home() {
 	// Initial load: restore saved test state from localStorage.
 	useEffect(() => {
 		fetchData(!!cachedHomeData);
-		const savedTestResults = localStorage.getItem("agentTestResults");
-		if (savedTestResults) {
-			try {
-				setTestResults(JSON.parse(savedTestResults));
-			} catch (e) {
-				console.error("Failed to parse testResults from localStorage", e);
-			}
-		}
-		const savedPlatformTestResults = localStorage.getItem(
-			"platformTestResults",
+		setTestResults(
+			readBoundedStorageRecord<AgentModelTestResult | null>(
+				"agentTestResults",
+				getDiagnosticStorageOptions(),
+			),
 		);
-		if (savedPlatformTestResults) {
-			try {
-				setPlatformTestResults(JSON.parse(savedPlatformTestResults));
-			} catch (e) {
-				console.error(
-					"Failed to parse platformTestResults from localStorage",
-					e,
-				);
-			}
-		}
-		const savedSessionTestResults = localStorage.getItem("sessionTestResults");
-		if (savedSessionTestResults) {
-			try {
-				setSessionTestResults(JSON.parse(savedSessionTestResults));
-			} catch (e) {
-				console.error(
-					"Failed to parse sessionTestResults from localStorage",
-					e,
-				);
-			}
-		}
-		const savedDmSessionResults = localStorage.getItem("dmSessionResults");
-		if (savedDmSessionResults) {
-			try {
-				setDmSessionResults(JSON.parse(savedDmSessionResults));
-			} catch (e) {
-				console.error("Failed to parse dmSessionResults from localStorage", e);
-			}
-		}
+		setPlatformTestResults(
+			readBoundedStorageRecord<PlatformTestResult | null>(
+				"platformTestResults",
+				getDiagnosticStorageOptions(),
+			),
+		);
+		setSessionTestResults(
+			readBoundedStorageRecord<AgentSessionTestResult | null>(
+				"sessionTestResults",
+				getDiagnosticStorageOptions(),
+			),
+		);
+		setDmSessionResults(
+			readBoundedStorageRecord<PlatformTestResult | null>(
+				"dmSessionResults",
+				getDiagnosticStorageOptions(),
+			),
+		);
 	}, [fetchData]);
 
 	useEffect(() => {
@@ -595,36 +595,51 @@ export default function Home() {
 
 	// Persist test results to localStorage.
 	useEffect(() => {
-		if (testResults) {
-			localStorage.setItem("agentTestResults", JSON.stringify(testResults));
+		if (testResults && Object.keys(testResults).length > 0) {
+			writeBoundedStorageRecord(
+				"agentTestResults",
+				testResults,
+				getDiagnosticStorageOptions(),
+			);
+			return;
 		}
+		clearBoundedStorageKey("agentTestResults");
 	}, [testResults]);
 
 	useEffect(() => {
-		if (platformTestResults) {
-			localStorage.setItem(
+		if (platformTestResults && Object.keys(platformTestResults).length > 0) {
+			writeBoundedStorageRecord(
 				"platformTestResults",
-				JSON.stringify(platformTestResults),
+				platformTestResults,
+				getDiagnosticStorageOptions(),
 			);
+			return;
 		}
+		clearBoundedStorageKey("platformTestResults");
 	}, [platformTestResults]);
 
 	useEffect(() => {
-		if (sessionTestResults) {
-			localStorage.setItem(
+		if (sessionTestResults && Object.keys(sessionTestResults).length > 0) {
+			writeBoundedStorageRecord(
 				"sessionTestResults",
-				JSON.stringify(sessionTestResults),
+				sessionTestResults,
+				getDiagnosticStorageOptions(),
 			);
+			return;
 		}
+		clearBoundedStorageKey("sessionTestResults");
 	}, [sessionTestResults]);
 
 	useEffect(() => {
-		if (dmSessionResults) {
-			localStorage.setItem(
+		if (dmSessionResults && Object.keys(dmSessionResults).length > 0) {
+			writeBoundedStorageRecord(
 				"dmSessionResults",
-				JSON.stringify(dmSessionResults),
+				dmSessionResults,
+				getDiagnosticStorageOptions(),
 			);
+			return;
 		}
+		clearBoundedStorageKey("dmSessionResults");
 	}, [dmSessionResults]);
 
 	const testAllAgents = useCallback(() => {

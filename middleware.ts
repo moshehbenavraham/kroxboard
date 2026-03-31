@@ -18,11 +18,18 @@ export function middleware(request: NextRequest) {
 	response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
 	response.headers.set("Cross-Origin-Resource-Policy", "same-origin");
 	response.headers.set("Origin-Agent-Cluster", "?1");
+	response.headers.set("X-Permitted-Cross-Domain-Policies", "none");
 	response.headers.set(
 		"Permissions-Policy",
-		"camera=(), geolocation=(), microphone=()",
+		"camera=(), display-capture=(), geolocation=(), microphone=(), payment=(), usb=()",
 	);
 	response.headers.set("X-DNS-Prefetch-Control", "off");
+	if (request.nextUrl.protocol === "https:") {
+		response.headers.set(
+			"Strict-Transport-Security",
+			"max-age=63072000; includeSubDomains; preload",
+		);
+	}
 
 	// Basic Content Security Policy
 	const csp = `
@@ -36,6 +43,10 @@ export function middleware(request: NextRequest) {
     font-src 'self' data:;
     connect-src 'self' ws: wss:;
     form-action 'self';
+    frame-src 'none';
+    manifest-src 'self';
+    media-src 'self';
+    worker-src 'self' blob:;
   `
 		.replace(/\s{2,}/g, " ")
 		.trim();

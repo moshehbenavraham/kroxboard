@@ -11,7 +11,6 @@ type ReleasePayload = {
 	tag: string;
 	name: string;
 	publishedAt: string;
-	body: string;
 	htmlUrl: string;
 };
 
@@ -39,7 +38,6 @@ async function fetchLatestRelease(): Promise<ReleasePayload> {
 		tag: data.tag_name,
 		name: data.name || data.tag_name,
 		publishedAt: data.published_at,
-		body: data.body || "",
 		htmlUrl: data.html_url,
 	};
 }
