@@ -2131,7 +2131,7 @@ export default function PixelOfficePage() {
 						const placementRow = entry.canPlaceOnWalls
 							? getWallPlacementRow(editor.selectedFurnitureType, row)
 							: row;
-						const uid = `furn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+						const uid = `furn-${Date.now()}-${crypto.getRandomValues(new Uint32Array(1))[0].toString(36).slice(0, 6)}`;
 						const item = {
 							uid,
 							type: editor.selectedFurnitureType,
