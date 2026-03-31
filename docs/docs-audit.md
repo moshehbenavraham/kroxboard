@@ -36,8 +36,7 @@
 | adr/0000-template.md | Template only -- no decisions recorded yet (expected pre-implementation) |
 | runbooks/incident-response.md | Current -- severity levels, common incidents with resolution steps |
 | quick-start.md | Updated -- removed stale repo URLs and redirected to onboarding.md |
-| SECURITY_MASTER.md | Current -- policy, secure defaults, remediation priorities, living artifact rules |
-| SECURITY_FINDINGS.md | Current -- all 35 findings tracked with severity, status, and planned session |
+| SECURITY.md | Current -- root security policy, secure defaults, findings register, reporting guidance, and accepted risk |
 | ongoing-projects/security-items-outside-prd-scope.md | Current -- single file as required by PRD |
 
 ## Additional docs/ Content (Pre-existing)
@@ -77,8 +76,7 @@ All documentation links verified:
 - docs/deployment.md
 - docs/runbooks/incident-response.md
 - docs/adr/0000-template.md
-- docs/SECURITY_MASTER.md
-- docs/SECURITY_FINDINGS.md
+- SECURITY.md
 - docs/ongoing-projects/security-items-outside-prd-scope.md
 
 ## Documentation Gaps

@@ -132,8 +132,7 @@ Platform: GitHub Actions
 
 ## Documentation
 
-- Keep `docs/SECURITY_MASTER.md` aligned with the current remediation plan and secure-default policy.
-- Keep `docs/SECURITY_FINDINGS.md` aligned with finding status changes and verification results.
+- Keep root `SECURITY.md` aligned with the current remediation plan, secure-default policy, finding status changes, and verification results.
 - Update deployment docs whenever a security default or required env flag changes.
 
 ## When In Doubt

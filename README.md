@@ -56,8 +56,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - [Deployment](docs/deployment.md)
 - [Environments](docs/environments.md)
 - [Contributing](CONTRIBUTING.md)
-- [Security Master Plan](docs/SECURITY_MASTER.md)
-- [Security Findings Register](docs/SECURITY_FINDINGS.md)
+- [Security Policy and Findings](SECURITY.md)
 
 ## Features
 
@@ -175,17 +174,6 @@ The `deploy/` directory contains ready-made cloudflared and systemd unit
 templates. See [Deployment Guide](docs/deployment.md) for Cloudflare Tunnel and
 production setup.
 
-## Project Status
-
-Phase 03 closeout is complete. See [PRD](.spec_system/PRD/PRD.md) for the archived remediation plan and [Security Master Plan](docs/SECURITY_MASTER.md) for the current security posture.
-
 ## License
 
 [MIT](LICENSE)
-
-## Upstream Author Contact
-
-Historical contact details preserved from the upstream README:
-
-- Xiaohongshu: [主页](https://xhslink.com/m/AsJKWgEBt1I)
-- WeChat: `xmanr123`

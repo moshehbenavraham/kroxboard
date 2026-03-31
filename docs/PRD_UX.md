@@ -100,10 +100,10 @@ Feature controls absent --> Read-only view only
 **Goal**: Check remediation status across findings
 
 ```
-docs/SECURITY_FINDINGS.md --> Scan finding statuses --> Cross-reference with codebase
+SECURITY.md --> Scan finding statuses --> Cross-reference with codebase
      |
      v
-docs/SECURITY_MASTER.md --> Review plan and priorities
+SECURITY.md --> Review policy, priorities, and accepted risk
 ```
 
 **Happy path**: Findings register is current, statuses reflect code state.

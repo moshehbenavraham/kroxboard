@@ -4,7 +4,7 @@
 
 This is the only remaining file under `docs/ongoing-projects/`. It holds work that is intentionally outside the current scope of `.spec_system/PRD/PRD.md`.
 
-The in-scope audit backlog, phase mapping, and validation gates now live in `.spec_system/PRD/PRD.md`. `docs/SECURITY_MASTER.md` remains the policy document and `docs/SECURITY_FINDINGS.md` remains the live status register.
+The in-scope audit backlog, phase mapping, and validation gates now live in `.spec_system/PRD/PRD.md`. Root `SECURITY.md` is the canonical policy document and live status register.
 
 ## Outside Current PRD Scope
 
