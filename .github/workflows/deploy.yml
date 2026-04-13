@@ -60,7 +60,7 @@ jobs:
 
       - name: Notify Failure
         if: failure()
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             core.info('TODO: Configure failure notification (e.g. Slack/Discord webhook)')
