@@ -85,7 +85,7 @@ describe("GET /api/stats-all", () => {
 		});
 	});
 
-	it("returns a sanitized failure when a session file exceeds the read budget", async () => {
+	it("skips a session file that exceeds the read budget", async () => {
 		fs.writeFileSync(
 			path.join(
 				tempOpenclawHome,
@@ -100,9 +100,18 @@ describe("GET /api/stats-all", () => {
 		const route = await import("./route");
 		const response = await route.GET(createStatsRequest("198.51.100.62"));
 
-		expect(response.status).toBe(500);
-		await expect(response.json()).resolves.toEqual({
-			error: "Stats aggregation failed",
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			daily: [
+				{
+					date: "2026-03-31",
+					inputTokens: 10,
+					outputTokens: 5,
+					totalTokens: 15,
+					messageCount: 1,
+					avgResponseMs: 2000,
+				},
+			],
 		});
 	});
 });

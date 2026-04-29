@@ -98,7 +98,7 @@ describe("GET /api/stats/[agentId]", () => {
 		expect(body.monthly).toHaveLength(1);
 	});
 
-	it("returns a sanitized failure when a session file exceeds the read budget", async () => {
+	it("skips a session file that exceeds the read budget", async () => {
 		const sessionsDir = path.join(
 			tempOpenclawHome,
 			"agents",
@@ -111,6 +111,25 @@ describe("GET /api/stats/[agentId]", () => {
 			"x".repeat(MAX_ANALYTICS_SESSION_FILE_BYTES + 1),
 		);
 
+		fs.writeFileSync(
+			path.join(sessionsDir, "session-1.jsonl"),
+			[
+				JSON.stringify({
+					type: "message",
+					timestamp: "2026-03-30T10:00:00.000Z",
+					message: { role: "user" },
+				}),
+				JSON.stringify({
+					type: "message",
+					timestamp: "2026-03-30T10:00:05.000Z",
+					message: {
+						role: "assistant",
+						stopReason: "stop",
+						usage: { input: 3, output: 5, totalTokens: 8 },
+					},
+				}),
+			].join("\n"),
+		);
 		const route = await import("./route");
 		const response = await route.GET(
 			new Request("http://localhost/api/stats/main"),
@@ -119,9 +138,19 @@ describe("GET /api/stats/[agentId]", () => {
 			},
 		);
 
-		expect(response.status).toBe(500);
-		await expect(response.json()).resolves.toEqual({
-			error: "Unable to load stats",
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			agentId: "main",
+			daily: [
+				{
+					date: "2026-03-30",
+					inputTokens: 3,
+					outputTokens: 5,
+					totalTokens: 8,
+					messageCount: 1,
+					avgResponseMs: 5000,
+				},
+			],
 		});
 	});
 });

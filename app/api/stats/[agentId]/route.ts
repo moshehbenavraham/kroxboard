@@ -1,11 +1,8 @@
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { MAX_ANALYTICS_SESSION_FILE_BYTES } from "@/lib/openclaw-analytics";
+import { readAnalyticsSessionFile } from "@/lib/openclaw-analytics";
 import { resolveOpenclawAgentSessionsDir } from "@/lib/openclaw-paths";
-import {
-	listBoundedDirectory,
-	readBoundedTextFile,
-} from "@/lib/openclaw-read-paths";
+import { listBoundedDirectory } from "@/lib/openclaw-read-paths";
 import {
 	createInvalidRequestBoundaryResponse,
 	validateAgentId,
@@ -39,10 +36,7 @@ async function parseSessions(
 
 	for (const file of files) {
 		const filePath = path.join(sessionsDir, file);
-		const content = await readBoundedTextFile(filePath, {
-			allowMissing: true,
-			maxBytes: MAX_ANALYTICS_SESSION_FILE_BYTES,
-		});
+		const content = await readAnalyticsSessionFile(filePath);
 		if (!content) {
 			continue;
 		}

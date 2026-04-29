@@ -73,7 +73,7 @@ describe("GET /api/activity-heatmap", () => {
 		});
 	});
 
-	it("returns a sanitized failure when a session file exceeds the read budget", async () => {
+	it("skips a session file that exceeds the read budget", async () => {
 		fs.writeFileSync(
 			path.join(
 				tempOpenclawHome,
@@ -88,9 +88,13 @@ describe("GET /api/activity-heatmap", () => {
 		const route = await import("./route");
 		const response = await route.GET(createHeatmapRequest("198.51.100.63"));
 
-		expect(response.status).toBe(500);
-		await expect(response.json()).resolves.toEqual({
-			error: "Activity heatmap generation failed",
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			agents: [
+				{
+					agentId: "main",
+				},
+			],
 		});
 	});
 });

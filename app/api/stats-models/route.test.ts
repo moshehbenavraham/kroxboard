@@ -96,7 +96,7 @@ describe("GET /api/stats-models", () => {
 		expect(readSpy).toHaveBeenCalledTimes(1);
 	});
 
-	it("returns a sanitized failure when a session file exceeds the read budget", async () => {
+	it("skips a session file that exceeds the read budget", async () => {
 		fs.writeFileSync(
 			path.join(
 				tempOpenclawHome,
@@ -111,9 +111,20 @@ describe("GET /api/stats-models", () => {
 		const route = await import("./route");
 		const response = await route.GET();
 
-		expect(response.status).toBe(500);
-		await expect(response.json()).resolves.toEqual({
-			error: "Unable to load model stats",
+		expect(response.status).toBe(200);
+		await expect(response.json()).resolves.toMatchObject({
+			models: [
+				{
+					modelId: "claude-sonnet",
+					provider: "anthropic",
+					totalTokens: 30,
+				},
+				{
+					modelId: "gpt-4o-mini",
+					provider: "openai",
+					totalTokens: 15,
+				},
+			],
 		});
 	});
 });

@@ -1,11 +1,10 @@
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { MAX_ANALYTICS_SESSION_FILE_BYTES } from "@/lib/openclaw-analytics";
+import { readAnalyticsSessionFile } from "@/lib/openclaw-analytics";
 import { OPENCLAW_HOME } from "@/lib/openclaw-paths";
 import {
 	getCachedComputation,
 	listBoundedDirectory,
-	readBoundedTextFile,
 } from "@/lib/openclaw-read-paths";
 import {
 	applyDiagnosticRateLimitHeaders,
@@ -47,12 +46,8 @@ async function parseAgentSessions(agentId: string): Promise<InternalDayStat[]> {
 	});
 
 	for (const fileName of fileNames) {
-		const content = await readBoundedTextFile(
+		const content = await readAnalyticsSessionFile(
 			path.join(sessionsDir, fileName),
-			{
-				allowMissing: true,
-				maxBytes: MAX_ANALYTICS_SESSION_FILE_BYTES,
-			},
 		);
 		if (!content) continue;
 
